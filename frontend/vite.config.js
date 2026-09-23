@@ -3,13 +3,14 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/mapper-new-ui/',  
   plugins: [react()],
   server: {
-    port: 5173,
+    port: 3005,
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'https://api.imis.com.pk:9001/mapper-new',
         changeOrigin: true,
         secure: false,
         configure: (proxy) => {
@@ -21,7 +22,7 @@ export default defineConfig({
     }
   },
   preview: {
-    port: 5173,
+    port: 3005,
     host: true
   },
   build: {
