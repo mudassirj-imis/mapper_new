@@ -1,0 +1,171 @@
+"""Endpoint CRUD and complete-mapping (bulk save) schemas.
+
+``CompleteMappingRequest`` / ``CompleteMappingResponse`` mirror the contract
+the mapper frontend uses when persisting a completed mapping — field names
+stay camelCase there on purpose, exactly as the client sends them.
+"""
+
+from datetime import datetime
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+
+from backend.models.enums import ContentTypeEnum, MethodEnum, ProtocolEnum
+
+
+class EndpointCreate(BaseModel):
+    """Payload for creating an endpoint (HTTP proxy, SFTP export, or mock).
+
+    ``endpoint_code`` is optional: when omitted the service derives it from
+    the target URL.
+    """
+
+    endpoint_code: str | None = None
+    source_api_url: str
+    target_api_url: str
+    method: MethodEnum = MethodEnum.POST
+    protocol: ProtocolEnum = ProtocolEnum.HTTP
+    request_content_type: ContentTypeEnum = ContentTypeEnum.JSON
+    require_authentication: bool = False
+    require_correlation_id: bool = True
+    description: str | None = None
+    is_active: bool = True
+    is_hidden: bool = False
+    mock_response: JsonValue = None
+    mock_enabled: bool = False
+    tenant_id: str | None = None
+    rate_limit_rpm: int | None = Field(default=60, ge=0)
+
+    # --- SFTP delivery mode -------------------------------------------------
+    sftp_host: str | None = None
+    sftp_port: int = 22
+    sftp_username: str | None = None
+    sftp_password: str | None = None
+    sftp_private_key_path: str | None = None
+    sftp_remote_path: str | None = None
+    dynamic_filename_pattern: str | None = None
+
+    # --- Upstream authentication ---------------------------------------------
+    api_id: str | None = None
+    api_password: str | None = None
+    api_auth_url: str | None = None
+
+    created_by: int | None = None
+
+
+class EndpointUpdate(BaseModel):
+    """Partial update payload — every field is optional."""
+
+    endpoint_code: str | None = None
+    source_api_url: str | None = None
+    target_api_url: str | None = None
+    method: MethodEnum | None = None
+    protocol: ProtocolEnum | None = None
+    request_content_type: ContentTypeEnum | None = None
+    require_authentication: bool | None = None
+    require_correlation_id: bool | None = None
+    description: str | None = None
+    is_active: bool | None = None
+    is_hidden: bool | None = None
+    mock_response: JsonValue = None
+    mock_enabled: bool | None = None
+    tenant_id: str | None = None
+    rate_limit_rpm: int | None = Field(default=None, ge=0)
+
+    # --- SFTP delivery mode -------------------------------------------------
+    sftp_host: str | None = None
+    sftp_port: int | None = None
+    sftp_username: str | None = None
+    sftp_password: str | None = None
+    sftp_private_key_path: str | None = None
+    sftp_remote_path: str | None = None
+    dynamic_filename_pattern: str | None = None
+
+    # --- Upstream authentication ---------------------------------------------
+    api_id: str | None = None
+    api_password: str | None = None
+    api_auth_url: str | None = None
+
+    updated_by: int | None = None
+
+
+class EndpointResponse(BaseModel):
+    """Stored endpoint (read model)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    endpoint_code: str | None = None
+    source_api_url: str
+    target_api_url: str
+    method: str | None = None
+    protocol: str | None = None
+    request_content_type: str | None = None
+    require_authentication: bool | None = None
+    require_correlation_id: bool | None = None
+    description: str | None = None
+    is_active: bool | None = None
+    is_hidden: bool | None = None
+    mock_response: JsonValue = None
+    mock_enabled: bool | None = None
+    tenant_id: str | None = None
+    rate_limit_rpm: int | None = None
+
+    # --- SFTP delivery mode -------------------------------------------------
+    sftp_host: str | None = None
+    sftp_port: int | None = None
+    sftp_username: str | None = None
+    sftp_password: str | None = None
+    sftp_private_key_path: str | None = None
+    sftp_remote_path: str | None = None
+    dynamic_filename_pattern: str | None = None
+
+    # --- Upstream authentication ---------------------------------------------
+    api_id: str | None = None
+    api_password: str | None = None
+    api_auth_url: str | None = None
+
+    # --- Bookkeeping -------------------------------------------------------------
+    created_by: int | None = None
+    updated_by: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class MappingItem(BaseModel):
+    """One field-level mapping as sent by the mapper frontend."""
+
+    sourceField: str
+    targetField: str
+    enabled: bool = True
+    parameterType: str = "BODY"
+    parameterTypeValue: str = "BODY"
+
+
+class CompleteMappingRequest(BaseModel):
+    """Payload for ``POST /api/mappings/complete`` (frontend contract)."""
+
+    source: dict[str, Any] | None = None
+    target: dict[str, Any] | None = None
+    sourceUrl: str
+    targetUrl: str
+    sourceMethod: str
+    targetMethod: str
+    mappings: list[MappingItem]
+    score: float | None = None
+    api_id: str | None = None
+    api_password: str | None = None
+    api_auth_url: str | None = None
+
+
+class CompleteMappingResponse(BaseModel):
+    """Result of persisting a complete mapping."""
+
+    success: bool
+    apiEndpointId: UUID | str
+    endpointCode: str
+    message: str
+    parameterCount: int
+    isDuplicate: bool | None = None
+    warning: bool | None = None

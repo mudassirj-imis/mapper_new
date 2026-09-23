@@ -1,0 +1,17 @@
+# Secrets — never commit real environment files (see .env.example)
+.env
+.env.local
+
+# Virtual environment (created for backend development)
+.venv/
+venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# IDE / OS artifacts
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
