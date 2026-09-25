@@ -13,9 +13,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 from pydantic_settings import DotEnvSettingsSource
 
-# Build the app settings with fixed test secrets and no dotenv reads.
 with (
-    patch.dict(os.environ, {"JWT_SECRET": "test", "ENCRYPTION_KEY": "test"}, clear=True),
+    patch.dict(
+        os.environ, {"JWT_SECRET": "test", "ENCRYPTION_KEY": "test"}, clear=True
+    ),
     patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}),
 ):
     from backend.api.health_router import health
@@ -36,19 +37,21 @@ with (
 
 
 def _request(path: str) -> Request:
-    return Request({
-        "type": "http",
-        "asgi": {"version": "3.0"},
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "headers": [],
-        "client": ("10.0.0.5", 1234),
-        "server": ("test.local", 80),
-    })
+    return Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": b"",
+            "headers": [],
+            "client": ("10.0.0.5", 1234),
+            "server": ("test.local", 80),
+        }
+    )
 
 
 class RateLimiterTests(unittest.IsolatedAsyncioTestCase):
@@ -78,7 +81,9 @@ class RateLimiterTests(unittest.IsolatedAsyncioTestCase):
 
 class CircuitBreakerTests(unittest.IsolatedAsyncioTestCase):
     async def test_opens_after_threshold_failures(self):
-        breaker = CircuitBreaker(failure_threshold=3, window_seconds=60, recovery_timeout=0.1)
+        breaker = CircuitBreaker(
+            failure_threshold=3, window_seconds=60, recovery_timeout=0.1
+        )
         for _ in range(3):
             self.assertTrue(await breaker.allow("ep"))
             await breaker.record_failure("ep")
@@ -86,7 +91,9 @@ class CircuitBreakerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await breaker.allow("ep"))
 
     async def test_recovers_to_half_open_then_closes_on_success(self):
-        breaker = CircuitBreaker(failure_threshold=2, window_seconds=60, recovery_timeout=0.05)
+        breaker = CircuitBreaker(
+            failure_threshold=2, window_seconds=60, recovery_timeout=0.05
+        )
         await breaker.record_failure("ep")
         await breaker.record_failure("ep")
         self.assertEqual(breaker.state("ep"), CircuitState.OPEN)
@@ -99,7 +106,9 @@ class CircuitBreakerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await breaker.allow("ep"))
 
     async def test_failure_during_half_open_retrips(self):
-        breaker = CircuitBreaker(failure_threshold=1, window_seconds=60, recovery_timeout=0.01)
+        breaker = CircuitBreaker(
+            failure_threshold=1, window_seconds=60, recovery_timeout=0.01
+        )
         await breaker.record_failure("ep")
         await asyncio.sleep(0.02)
         self.assertTrue(await breaker.allow("ep"))
@@ -153,8 +162,12 @@ class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
         async def downstream(_request):
             return PlainTextResponse("ok")
 
-        self.assertEqual((await middleware.dispatch(request, downstream)).status_code, 200)
-        self.assertEqual((await middleware.dispatch(request, downstream)).status_code, 429)
+        self.assertEqual(
+            (await middleware.dispatch(request, downstream)).status_code, 200
+        )
+        self.assertEqual(
+            (await middleware.dispatch(request, downstream)).status_code, 429
+        )
 
     async def test_health_path_is_exempt(self):
         middleware = RateLimitMiddleware(FastAPI(), rpm=1)
@@ -164,7 +177,9 @@ class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
             return PlainTextResponse("ok")
 
         for _ in range(3):
-            self.assertEqual((await middleware.dispatch(request, downstream)).status_code, 200)
+            self.assertEqual(
+                (await middleware.dispatch(request, downstream)).status_code, 200
+            )
 
 
 class WebhookClassificationTests(unittest.TestCase):
@@ -273,10 +288,14 @@ class LogOnlyEndpointTests(unittest.IsolatedAsyncioTestCase):
 
 class MockShortCircuitTests(unittest.IsolatedAsyncioTestCase):
     async def test_mock_returns_configured_response_without_upstream(self):
-        endpoint = endpoint_snapshot(mock_enabled=True, mock_response={"hello": [1, 2, 3]})
+        endpoint = endpoint_snapshot(
+            mock_enabled=True, mock_response={"hello": [1, 2, 3]}
+        )
         client = make_client()
         engine = GatewayEngine(make_db(), client)
-        outcome = await engine.execute_resolved(endpoint, {"a": 1}, {}, "/v1/items", "POST")
+        outcome = await engine.execute_resolved(
+            endpoint, {"a": 1}, {}, "/v1/items", "POST"
+        )
         self.assertTrue(outcome.success)
         self.assertEqual(outcome.source, "mock")
         self.assertEqual(outcome.to_result()["status_code"], 200)
@@ -286,7 +305,11 @@ class MockShortCircuitTests(unittest.IsolatedAsyncioTestCase):
     def test_build_mock_result_sets_success_audit_envelope(self):
         endpoint = endpoint_snapshot(mock_enabled=True, mock_response={"ok": True})
         result = build_mock_result(
-            endpoint, request_id="rid", method="POST", url="/v1/items", headers={"X": "1"}
+            endpoint,
+            request_id="rid",
+            method="POST",
+            url="/v1/items",
+            headers={"X": "1"},
         )
         self.assertTrue(result["success"])
         self.assertEqual(result["status_code"], 200)

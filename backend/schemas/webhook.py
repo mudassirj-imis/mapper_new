@@ -5,7 +5,12 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import (
-    AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter,
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    TypeAdapter,
     field_validator,
 )
 
@@ -29,9 +34,13 @@ def _unique_events(value: list[WebhookEvent]) -> list[WebhookEvent]:
     return value
 
 
-WebhookUrl = Annotated[str, Field(max_length=2083), AfterValidator(_validate_destination)]
+WebhookUrl = Annotated[
+    str, Field(max_length=2083), AfterValidator(_validate_destination)
+]
 WebhookEvents = Annotated[
-    list[WebhookEvent], Field(min_length=1, max_length=4), AfterValidator(_unique_events)
+    list[WebhookEvent],
+    Field(min_length=1, max_length=4),
+    AfterValidator(_unique_events),
 ]
 
 

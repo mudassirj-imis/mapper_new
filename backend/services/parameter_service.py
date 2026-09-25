@@ -6,7 +6,6 @@ commits its own writes so routers can serialize the returned ORM objects
 directly. Explicit ``*_flush`` helpers leave commit/rollback to their caller.
 """
 
-
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

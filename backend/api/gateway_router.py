@@ -28,7 +28,6 @@ from backend.core.config import settings
 from backend.models import CallStatusEnum
 from backend.services.central_auth import CentralUser
 
-# Protected routes receive the centralized identity, not the local ORM user.
 User = CentralUser
 from backend.schemas.gateway import MapAndCallRequest, MapAndCallResponse
 from backend.services.circuit_breaker import circuit_breaker
@@ -45,8 +44,6 @@ __all__ = ["router"]
 
 router = APIRouter(tags=["Gateway"])
 
-
-# Failure kinds that indicate a genuine downstream outage (breaker-worthy).
 _TRIPABLE = frozenset(
     {
         "upstream_http",
@@ -124,8 +121,6 @@ async def map_and_call(
     url = str(payload.targetUrl or "").strip()
     request_headers = payload.headers or {}
 
-    # Config-only resolution gives us the endpoint ID without a redundant
-    # re-fetch inside the engine.
     endpoint = await engine.resolve_endpoint(
         payload.endpointId,
         url,
@@ -148,12 +143,9 @@ async def map_and_call(
         )
 
         if cached is not None:
-            # Identical request within the dedup window: replay the original.
             result = dict(cached)
 
         else:
-            # The current MySQL api_endpoint table does not contain a
-            # rate_limit_rpm column, so use the application-wide default.
             rate_limit_rpm = settings.RATE_LIMIT_DEFAULT_RPM
 
             decision = await rate_limiter.check(
@@ -208,7 +200,6 @@ async def map_and_call(
                 elif _tripable(result):
                     await circuit_breaker.record_failure(endpoint.id)
 
-    # The audit log is written off the response path.
     log_data = dict(result)
     log_data["internal_request_body"] = payload.requestData
 

@@ -22,8 +22,6 @@ class ParameterResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    # ``api_endpoint_parameter_mapping`` uses INT auto-increment keys (see
-    # ``ParameterMapping``); declaring these as UUID rejected every real row.
     id: int
     api_endpoint_id: int
     source_parameter: str

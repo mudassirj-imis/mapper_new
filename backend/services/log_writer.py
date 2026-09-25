@@ -36,41 +36,25 @@ async def write_call_log(
         succeeded = bool(log_data.get("success"))
 
         status = (
-            CallStatusEnum.SUCCESS.value
-            if succeeded
-            else CallStatusEnum.FAILED.value
+            CallStatusEnum.SUCCESS.value if succeeded else CallStatusEnum.FAILED.value
         )
 
         record = ApiCallLog(
             endpoint_id=log_data.get("endpoint_id"),
-
-            # Caller -> gateway
             source_request_payload=(
                 log_data.get("internal_request_body")
                 or log_data.get("request_body")
                 or {}
             ),
-
-            # Gateway response to caller
             source_response=_client_response(log_data),
-
-            # Gateway -> upstream
-            target_request_payload=(
-                log_data.get("external_request_body")
-                or {}
-            ),
-
-            # Upstream -> gateway
+            target_request_payload=(log_data.get("external_request_body") or {}),
             target_response=log_data.get("data"),
-
             status=status,
-
             response_time_ms=(
                 log_data.get("external_response_time_ms")
                 or log_data.get("total_time_ms")
                 or 0
             ),
-
             error_message=log_data.get("error"),
         )
 

@@ -39,26 +39,20 @@ class CallLogResponse(BaseModel):
     error_message: str | None = None
     created_at: datetime | None = None
 
-    # --- Frontend audit contract -------------------------------------------
     request_id: str | None = None
     method: str | None = None
-    #: Endpoint path the caller targeted (``api_endpoint.source_api_url``).
-    path: str | None = None
 
     overall_status: bool | None = None
     tenant_id: str | None = None
 
-    # Timing
     external_status_code: int | None = None
     total_time_ms: int | None = None
 
-    # Internal audit data (caller -> gateway)
     internal_request_headers: dict[str, Any] | None = None
     internal_request_body: dict[str, Any] | None = None
     internal_api_client_response: dict[str, Any] | None = None
     internal_api_client_status: str | None = None
 
-    # External audit data (gateway -> upstream)
     external_request_url: str | None = None
     external_request_method: str | None = None
     external_request_headers: dict[str, Any] | None = None
@@ -68,7 +62,6 @@ class CallLogResponse(BaseModel):
     external_response_headers: dict[str, Any] | None = None
     external_response_time_ms: int | None = None
 
-    # Failure diagnostics
     full_log: str | None = None
     timeout_configured: int | None = None
 
@@ -88,12 +81,10 @@ class CallLogSummary(BaseModel):
     status: str | None = None
     overall_status: bool | None = None
 
-    # Timing
     external_status_code: int | None = None
     total_time_ms: int | None = None
     created_at: datetime | None = None
 
-    # Audit data
     internal_request_headers: dict[str, Any] | None = None
     internal_request_body: dict[str, Any] | None = None
     internal_api_client_response: dict[str, Any] | None = None
@@ -107,6 +98,7 @@ class CallLogSummary(BaseModel):
     external_response: Any | None = None
     external_response_headers: dict[str, Any] | None = None
     external_response_time_ms: int | None = None
+
 
 class CallLogListResponse(PaginatedResponse):
     """Paginated envelope of CallLogSummary rows."""

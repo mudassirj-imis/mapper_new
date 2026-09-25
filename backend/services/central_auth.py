@@ -63,7 +63,9 @@ class CentralAuthUnavailable(CentralAuthError):
 class CentralAuthRejected(CentralAuthError):
     """The central service rejected supplied credentials or a token."""
 
-    def __init__(self, message: str = "Invalid credentials", status_code: int = 401) -> None:
+    def __init__(
+        self, message: str = "Invalid credentials", status_code: int = 401
+    ) -> None:
         super().__init__(message, status_code=status_code)
 
 
@@ -104,7 +106,9 @@ class CentralTokenPair:
 def _process_aes_key(value: str | None) -> bytes:
     """Resolve the central AES key exactly as the auth service does."""
     if not value:
-        raise CentralAuthUnavailable("Central authentication encryption key is not configured")
+        raise CentralAuthUnavailable(
+            "Central authentication encryption key is not configured"
+        )
 
     if "=" in value or "+" in value or "/":
         try:
@@ -124,13 +128,14 @@ def _process_aes_key(value: str | None) -> bytes:
 
     raw = value.encode("utf-8")
     if len(raw) != 32:
-        raise CentralAuthUnavailable("Central authentication encryption key must be 32 bytes")
+        raise CentralAuthUnavailable(
+            "Central authentication encryption key must be 32 bytes"
+        )
     return raw
 
 
 def _auth_key() -> bytes:
-    # The fallback keeps existing deployments working while the explicit
-    # AUTH_SERVICE_ENCRYPTION_KEY setting becomes the preferred configuration.
+
     return _process_aes_key(
         settings.AUTH_SERVICE_ENCRYPTION_KEY or settings.UPSTREAM_AUTH_DECRYPTION_KEY
     )
@@ -152,27 +157,36 @@ def decrypt_auth_json(blob: str) -> dict[str, Any]:
     try:
         raw = base64.b64decode(blob, validate=True)
     except (ValueError, binascii.Error) as exc:
-        raise CentralAuthError("Authentication service returned invalid encrypted data") from exc
+        raise CentralAuthError(
+            "Authentication service returned invalid encrypted data"
+        ) from exc
     if len(raw) < _NONCE_SIZE + _TAG_SIZE:
-        raise CentralAuthError("Authentication service returned truncated encrypted data")
+        raise CentralAuthError(
+            "Authentication service returned truncated encrypted data"
+        )
 
     nonce = raw[:_NONCE_SIZE]
-    tag = raw[_NONCE_SIZE:_NONCE_SIZE + _TAG_SIZE]
-    ciphertext = raw[_NONCE_SIZE + _TAG_SIZE:]
+    tag = raw[_NONCE_SIZE : _NONCE_SIZE + _TAG_SIZE]
+    ciphertext = raw[_NONCE_SIZE + _TAG_SIZE :]
     try:
         plaintext = AESGCM(_auth_key()).decrypt(nonce, ciphertext + tag, None)
         value = json.loads(plaintext.decode("utf-8"))
     except Exception as exc:
-        raise CentralAuthError("Unable to decrypt authentication service response") from exc
+        raise CentralAuthError(
+            "Unable to decrypt authentication service response"
+        ) from exc
     if not isinstance(value, dict):
         raise CentralAuthError("Authentication service response was not a JSON object")
     return value
 
 
-
 def _base_url() -> str:
     """Return the central service base URL, including the ``/auth`` mount."""
-    raw = settings.AUTH_SERVICE_URL or settings.UPSTREAM_AUTH_URL or _DEFAULT_AUTH_BASE_URL
+    raw = (
+        settings.AUTH_SERVICE_URL
+        or settings.UPSTREAM_AUTH_URL
+        or _DEFAULT_AUTH_BASE_URL
+    )
     parsed = urlparse(raw if "://" in raw else f"https://{raw}")
     path = parsed.path.rstrip("/")
     for suffix in ("/openapi.json", "/auth1/login"):
@@ -219,9 +233,13 @@ def _raise_for_error(response: httpx.Response, envelope: Mapping[str, Any]) -> N
     if response.status_code < 400 and code < 400 and status != "error":
         return
 
-    message = str(envelope.get("message") or envelope.get("detail") or "Authentication failed")
+    message = str(
+        envelope.get("message") or envelope.get("detail") or "Authentication failed"
+    )
     if code in {400, 401, 403} or response.status_code in {400, 401, 403}:
-        raise CentralAuthRejected(message, status_code=code if 400 <= code < 600 else response.status_code)
+        raise CentralAuthRejected(
+            message, status_code=code if 400 <= code < 600 else response.status_code
+        )
     if response.status_code >= 500 or code >= 500:
         raise CentralAuthUnavailable()
     raise CentralAuthError(message, status_code=code if 400 <= code < 600 else 502)
@@ -291,11 +309,15 @@ def _central_user(data: Mapping[str, Any]) -> CentralUser:
     user_data = user if isinstance(user, Mapping) else data
     user_id = user_data.get("id", user_data.get("user_id", data.get("user_id")))
     if user_id is None:
-        raise CentralAuthError("Authentication service response did not include a user id")
+        raise CentralAuthError(
+            "Authentication service response did not include a user id"
+        )
     try:
         normalized_id = int(user_id)
     except (TypeError, ValueError) as exc:
-        raise CentralAuthError("Authentication service returned an invalid user id") from exc
+        raise CentralAuthError(
+            "Authentication service returned an invalid user id"
+        ) from exc
 
     email = user_data.get("email")
     user_name = (
@@ -310,7 +332,9 @@ def _central_user(data: Mapping[str, Any]) -> CentralUser:
         id=normalized_id,
         user_name=str(user_name),
         email=str(email) if email else None,
-        is_active=_active_value(user_data.get("is_active", user_data.get("active", True))),
+        is_active=_active_value(
+            user_data.get("is_active", user_data.get("active", True))
+        ),
         roles=_role_names(user_data.get("roles", data.get("roles", []))),
         is_super_admin=bool(
             user_data.get("is_super_admin", data.get("is_super_admin", False))
@@ -344,7 +368,9 @@ async def central_login(
         raise CentralAuthError("Authentication service returned no login data")
     access_token = data.get("access_token")
     if not isinstance(access_token, str) or not access_token.strip():
-        raise CentralAuthRejected("Authentication service did not return an access token")
+        raise CentralAuthRejected(
+            "Authentication service did not return an access token"
+        )
     user = _central_user(data)
     expires = data.get("access_token_expires_in", data.get("expires_in"))
     try:
@@ -396,7 +422,9 @@ async def central_refresh(
         raise CentralAuthRejected("Authentication service returned no refresh data")
     access_token = data.get("access_token")
     if not isinstance(access_token, str) or not access_token.strip():
-        raise CentralAuthRejected("Authentication service did not return an access token")
+        raise CentralAuthRejected(
+            "Authentication service did not return an access token"
+        )
     expires = data.get("expires_in", data.get("access_token_expires_in"))
     try:
         expires_in = int(expires) if expires is not None else None
@@ -420,11 +448,9 @@ async def central_logout(client: httpx.AsyncClient, access_token: str) -> None:
     except (httpx.RequestError, httpx.TimeoutException):
         return
     # A 401/403 means the token is already invalid, which is a successful
-    # client-side logout state. Other errors are intentionally not raised:
-    # local session cleanup must not be blocked by the remote service.
+
     if response.status_code not in {401, 403}:
         try:
             _request_json(response)
         except CentralAuthError:
             return
-

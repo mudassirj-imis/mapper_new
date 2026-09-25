@@ -5,7 +5,15 @@ from enum import Enum
 from uuid import UUID
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, DateTime, ForeignKey, Index, Text, Uuid, func, text,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Text,
+    Uuid,
+    func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -28,8 +36,8 @@ class Webhook(Base):
         CheckConstraint(
             "jsonb_typeof(events) = 'array' AND "
             "jsonb_array_length(events) BETWEEN 1 AND 4 AND "
-            "events <@ '[\"call_success\",\"call_failure\",\"call_timeout\","
-            "\"endpoint_created\"]'::jsonb",
+            'events <@ \'["call_success","call_failure","call_timeout",'
+            '"endpoint_created"]\'::jsonb',
             name="ck_webhooks_events",
         ),
         Index("idx_webhooks_endpoint", "endpoint_id"),
@@ -53,6 +61,8 @@ class Webhook(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(),
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
         onupdate=func.now(),
     )

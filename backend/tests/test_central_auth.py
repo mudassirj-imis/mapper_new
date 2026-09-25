@@ -13,7 +13,6 @@ import httpx
 
 from backend.services import central_auth
 
-
 _KEY = "k" * 32
 
 
@@ -95,10 +94,13 @@ class CentralAuthProtocolTests(unittest.IsolatedAsyncioTestCase):
                 client, "user@example.com", "secret"
             )
 
-        self.assertEqual([request.url.path for request in calls], [
-            "/auth/get_token",
-            "/auth/auth1/login",
-        ])
+        self.assertEqual(
+            [request.url.path for request in calls],
+            [
+                "/auth/get_token",
+                "/auth/auth1/login",
+            ],
+        )
         self.assertEqual(session.access_token, "access")
         self.assertEqual(session.refresh_token, "refresh")
         self.assertEqual(session.user.id, 7)

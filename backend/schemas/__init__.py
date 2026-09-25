@@ -23,29 +23,23 @@ from backend.schemas.parameter import (
 )
 
 __all__ = [
-    # auth
     "LoginRequest",
     "LoginResponse",
     "TokenData",
     "UserResponse",
-    # common
     "PaginatedResponse",
     "SuccessResponse",
-    # endpoint
     "CompleteMappingRequest",
     "CompleteMappingResponse",
     "EndpointCreate",
     "EndpointResponse",
     "EndpointUpdate",
     "MappingItem",
-    # gateway
     "MapAndCallRequest",
     "MapAndCallResponse",
-    # log
     "CallLogListResponse",
     "CallLogResponse",
     "CallLogSummary",
-    # parameter
     "ParameterBulkCreate",
     "ParameterCreate",
     "ParameterResponse",

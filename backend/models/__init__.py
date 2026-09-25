@@ -20,7 +20,6 @@ from backend.models.user import User, Role, UserRole
 from backend.models.webhook import Webhook, WebhookEvent
 
 __all__ = [
-    # Enums (single source of truth, re-exported for convenience)
     "CallStatusEnum",
     "ContentTypeEnum",
     "DataTypeEnum",
@@ -28,7 +27,6 @@ __all__ = [
     "ParamTypeEnum",
     "ProtocolEnum",
     "WebhookEvent",
-    # ORM models
     "ApiEndpoint",
     "ApiCallLog",
     "ParameterMapping",

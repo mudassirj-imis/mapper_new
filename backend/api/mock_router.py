@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_active_user, get_db
 from backend.services.central_auth import CentralUser
 
-# Protected routes receive the centralized identity, not the local ORM user.
 User = CentralUser
 from backend.services import endpoint_service
 

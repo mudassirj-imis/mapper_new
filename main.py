@@ -15,14 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.core.config import settings
 from backend.services.http_client import create_http_client
 
-# ---------------------------------------------------------------------------
-# Routers — all mounted under /api:
-#   auth, endpoints_router, parameters_router, gateway_router (live core)
+
 #   health_router, logs_router (Task 8), sftp_router, export_import_router,
 #   mock_router, webhook_router (Task 7) — with Task 6 resilience wired into
-#   gateway_router (dedup / rate-limit / circuit-breaker) plus the global
-#   RateLimitMiddleware below.
-#
+
 from backend.api.auth import router as auth_router
 from backend.api.endpoints_router import router as endpoints_router
 from backend.api.export_import_router import router as export_import_router
@@ -35,7 +31,6 @@ from backend.api.sftp_router import router as sftp_router
 from backend.api.webhook_router import router as webhook_router
 
 from backend.middleware.rate_limit import RateLimitMiddleware
-# ---------------------------------------------------------------------------
 
 
 @asynccontextmanager
@@ -60,10 +55,7 @@ def create_app() -> FastAPI:
         title="API Mapper & Gateway",
         version="1.0.0",
         lifespan=lifespan,
-        # Makes Swagger UI / ReDoc emit prefix-aware links. The proxy serves the
         # /mapper-new prefix, so the generated spec and OAuth2-redirect URLs
-        # must carry it too — otherwise the docs page loads but then fetches
-        # the origin root's spec, which belongs to a different service.
         root_path=settings.APP_ROOT_PATH,
     )
 
@@ -75,11 +67,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Global per-client-IP guard for the /api surface (coarse safety net on
-    # top of the per-endpoint limiter applied inside the gateway router).
     app.add_middleware(RateLimitMiddleware)
 
-    # --- Routers ------------------------------------------------------------
     app.include_router(auth_router, prefix="/api")
     app.include_router(endpoints_router, prefix="/api")
     app.include_router(parameters_router, prefix="/api")

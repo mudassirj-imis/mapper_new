@@ -28,7 +28,7 @@ __all__ = [
 ]
 
 # auto_error=False lets this module return a consistent 401 response for both
-# missing and invalid credentials.
+
 bearer_scheme = HTTPBearer(
     auto_error=False,
     description="Centralized SSPA/IMIS access token",
@@ -82,6 +82,7 @@ async def get_current_active_user(
 
 def require_roles(*roles: str):
     """Dependency factory gating an endpoint on central role names."""
+
     async def _require_roles(
         current_user: CentralUser = Depends(get_current_active_user),
     ) -> CentralUser:

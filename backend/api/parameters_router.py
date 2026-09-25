@@ -6,7 +6,6 @@ from backend.api.deps import get_current_active_user, get_db
 from backend.models import DataTypeEnum, ParamTypeEnum
 from backend.services.central_auth import CentralUser
 
-# Protected routes receive the centralized identity, not the local ORM user.
 User = CentralUser
 from backend.schemas.common import SuccessResponse
 from backend.schemas.parameter import ParameterBulkCreate, ParameterResponse

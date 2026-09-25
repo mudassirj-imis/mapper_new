@@ -38,7 +38,6 @@ __all__ = [
     "update_endpoint",
 ]
 
-#: Columns stored as ciphertext: encrypted on write, decrypted on read.
 _SENSITIVE_FIELDS = ("sftp_password", "api_password")
 
 
@@ -94,9 +93,7 @@ def _decrypt_sensitive(endpoint: ApiEndpoint) -> ApiEndpoint:
     return endpoint
 
 
-async def _fetch_by_id(
-    db: AsyncSession, endpoint_id: int | str
-) -> ApiEndpoint | None:
+async def _fetch_by_id(db: AsyncSession, endpoint_id: int | str) -> ApiEndpoint | None:
     """Plain single-row fetch (no eager loading, credentials left encrypted)."""
     identifier = _as_int(endpoint_id)
     if identifier is None:
@@ -141,9 +138,7 @@ async def list_endpoints(
     return [_decrypt_sensitive(endpoint) for endpoint in result.scalars().all()]
 
 
-async def get_endpoint(
-    db: AsyncSession, endpoint_id: int | str
-) -> ApiEndpoint | None:
+async def get_endpoint(db: AsyncSession, endpoint_id: int | str) -> ApiEndpoint | None:
     """Fetch one endpoint (parameters eager-loaded) with credentials decrypted.
 
     Returns ``None`` when the id is unknown (or not a valid integer id).

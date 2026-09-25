@@ -77,10 +77,6 @@ class _CachedToken:
         return (self.expires_at - time.time()) > min_ttl_seconds
 
 
-#: Process-wide cache keyed by login URL (different integrations can coexist and
-#: are kept independent). Module-level so the per-request engine instances share
-#: the same cached token and lock registry instead of re-authenticating every
-#: call.
 _CACHE: dict[str, _CachedToken] = {}
 _LOCKS: dict[str, asyncio.Lock] = {}
 
@@ -97,7 +93,8 @@ def _configured() -> bool:
 def _login_payload() -> dict[str, str]:
     return {
         settings.UPSTREAM_AUTH_USERNAME_FIELD or "email": settings.UPSTREAM_AUTH_EMAIL,
-        settings.UPSTREAM_AUTH_PASSWORD_FIELD or "password": settings.UPSTREAM_AUTH_PASSWORD,
+        settings.UPSTREAM_AUTH_PASSWORD_FIELD
+        or "password": settings.UPSTREAM_AUTH_PASSWORD,
     }
 
 
@@ -224,18 +221,18 @@ def _decrypt_login_payload(data: Any, url: str) -> str | None:
     try:
         raw = base64.b64decode(blob, validate=True)
     except (ValueError, binascii.Error):
-        logger.warning("Upstream auth login: encrypted_data is not valid base64 at %s", url)
+        logger.warning(
+            "Upstream auth login: encrypted_data is not valid base64 at %s", url
+        )
         return None
     if len(raw) < _GCM_NONCE_SIZE + _GCM_TAG_SIZE:
         logger.warning("Upstream auth login: encrypted_data too short at %s", url)
         return None
 
     nonce = raw[:_GCM_NONCE_SIZE]
-    tag = raw[_GCM_NONCE_SIZE:_GCM_NONCE_SIZE + _GCM_TAG_SIZE]
-    ciphertext = raw[_GCM_NONCE_SIZE + _GCM_TAG_SIZE:]
+    tag = raw[_GCM_NONCE_SIZE : _GCM_NONCE_SIZE + _GCM_TAG_SIZE]
+    ciphertext = raw[_GCM_NONCE_SIZE + _GCM_TAG_SIZE :]
     try:
-        # Server stores tag BEFORE ciphertext; the cryptography AESGCM API wants
-        # ciphertext+tag appended, so recombine them before decrypting.
         aesgcm = AESGCM(key)
         plaintext = aesgcm.decrypt(nonce, ciphertext + tag, None)
     except Exception as exc:
@@ -246,9 +243,7 @@ def _decrypt_login_payload(data: Any, url: str) -> str | None:
     return plaintext.decode("utf-8", errors="replace")
 
 
-def _encrypt_login_payload(
-    payload: dict[str, str], url: str
-) -> dict[str, str] | None:
+def _encrypt_login_payload(payload: dict[str, str], url: str) -> dict[str, str] | None:
     """Encrypt the login payload for ``encrypted_data`` (base64 AES-256-GCM).
 
     The SSPA/IMIS login endpoint accepts ONLY an encrypted request. When a
@@ -270,7 +265,7 @@ def _encrypt_login_payload(
     nonce = os.urandom(_GCM_NONCE_SIZE)
     try:
         aesgcm = AESGCM(key)
-        # cryptography returns ciphertext||tag; reorder to the server's tag||ciphertext.
+
         ct = aesgcm.encrypt(nonce, json.dumps(payload).encode("utf-8"), None)
     except Exception as exc:
         logger.warning(
@@ -293,15 +288,11 @@ async def _login(client: httpx.AsyncClient) -> _CachedToken | None:
     """
     url = settings.UPSTREAM_AUTH_URL
     payload = _login_payload()
-    content_type = (
-        settings.UPSTREAM_AUTH_LOGIN_CONTENT_TYPE or "json"
-    ).strip().lower()
+    content_type = (settings.UPSTREAM_AUTH_LOGIN_CONTENT_TYPE or "json").strip().lower()
 
     try:
-        # SSPA login accepts ONLY an encrypted request. Encrypt the payload and
         # send {encrypted_data: <base64 AES-GCM>} when a cipher key is set;
-        # otherwise fall back to a plain body (existing behaviour, still useful
-        # for non-encrypted back-ends).
+
         encrypted = _encrypt_login_payload(payload, url)
         if encrypted is not None:
             response = await client.post(url, json=encrypted)
@@ -332,7 +323,6 @@ async def _login(client: httpx.AsyncClient) -> _CachedToken | None:
         if isinstance(parsed, Mapping):
             data = parsed
         elif isinstance(parsed, str) and parsed.strip():
-            # The decrypted blob was the raw token itself.
             return _CachedToken(token=parsed.strip(), expires_at=None)
 
     token = _find_value(data, settings.UPSTREAM_AUTH_TOKEN_KEYS)
@@ -374,8 +364,6 @@ async def _cached_token(client: httpx.AsyncClient) -> str | None:
             return cached.token
         fresh = await _login(client)
         if fresh is None:
-            # Keep serving a just-expired token instead of dropping every call
-            # on a transient refresh glitch; the next call retries the login.
             return cached.token if cached is not None else None
         _CACHE[url] = fresh
         return fresh.token

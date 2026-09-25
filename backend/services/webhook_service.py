@@ -34,7 +34,6 @@ __all__ = [
     "update_webhook",
 ]
 
-#: Failure kinds the gateway treats as a timeout for webhook classification.
 _TIMEOUT_KINDS = ("upstream_timeout", "local_pool_timeout")
 
 
@@ -49,11 +48,6 @@ def event_for_result(result: dict[str, Any]) -> str:
     if result.get("failure_kind") in _TIMEOUT_KINDS:
         return WebhookEvent.CALL_TIMEOUT.value
     return WebhookEvent.CALL_FAILURE.value
-
-
-# ---------------------------------------------------------------------------
-# CRUD
-# ---------------------------------------------------------------------------
 
 
 async def list_webhooks(db: AsyncSession, endpoint_id=None) -> list[Webhook]:
@@ -131,8 +125,6 @@ async def delete_webhook(db: AsyncSession, webhook_id) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Delivery
-# ---------------------------------------------------------------------------
 
 
 async def fire_event(
@@ -145,7 +137,9 @@ async def fire_event(
     """POST an event to matching (enabled) subscriptions; never raises."""
     try:
         if endpoint_id is not None:
-            match = or_(Webhook.endpoint_id.is_(None), Webhook.endpoint_id == endpoint_id)
+            match = or_(
+                Webhook.endpoint_id.is_(None), Webhook.endpoint_id == endpoint_id
+            )
         else:
             match = Webhook.endpoint_id.is_(None)
         result = await db.execute(
@@ -154,14 +148,20 @@ async def fire_event(
         targets = [w for w in result.scalars().all() if event in (w.events or [])]
         if not targets:
             return
-        body = {"event": event, "endpoint_id": str(endpoint_id) if endpoint_id else None, "payload": payload}
+        body = {
+            "event": event,
+            "endpoint_id": str(endpoint_id) if endpoint_id else None,
+            "payload": payload,
+        }
         for target in targets:
             await _deliver(http_client, target.url, body)
     except Exception:
         logger.exception("Webhook dispatch failed for event %s", event)
 
 
-async def _deliver(http_client: httpx.AsyncClient, url: str, body: dict[str, Any]) -> None:
+async def _deliver(
+    http_client: httpx.AsyncClient, url: str, body: dict[str, Any]
+) -> None:
     """POST ``body`` to ``url`` with a single retry; exceptions are swallowed."""
     timeout = httpx.Timeout(float(settings.WEBHOOK_DELIVERY_TIMEOUT_SECONDS))
     for attempt in range(2):

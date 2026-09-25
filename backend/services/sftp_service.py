@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["list_file_preview", "list_remote_files", "test_connection"]
 
-#: Cap simultaneous SFTP operations across all requests.
 _semaphore = asyncio.Semaphore(int(settings.SFTP_MAX_CONCURRENT))
 
 _CREDENTIAL_FIELDS = ("host", "port", "username", "password", "private_key_path")

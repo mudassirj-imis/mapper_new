@@ -99,7 +99,10 @@ class CircuitBreaker:
             now = time.monotonic()
             self._prune(state, now)
             state.failures.append(now)
-            if state.state == CircuitState.HALF_OPEN or len(state.failures) >= self._threshold:
+            if (
+                state.state == CircuitState.HALF_OPEN
+                or len(state.failures) >= self._threshold
+            ):
                 state.state = CircuitState.OPEN
                 state.trip_at = now
 
@@ -116,5 +119,4 @@ class CircuitBreaker:
             state.failures.popleft()
 
 
-#: Process-wide instance shared by the gateway router.
 circuit_breaker = CircuitBreaker()

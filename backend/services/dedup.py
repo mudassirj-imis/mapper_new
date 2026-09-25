@@ -22,7 +22,9 @@ __all__ = ["DedupCache", "dedup_cache"]
 class DedupCache:
     """TTL cache keyed by ``(endpoint_id, canonical request_data)``."""
 
-    def __init__(self, ttl_seconds: float | None = None, max_entries: int | None = None) -> None:
+    def __init__(
+        self, ttl_seconds: float | None = None, max_entries: int | None = None
+    ) -> None:
         self._ttl = (
             float(ttl_seconds)
             if ttl_seconds is not None
@@ -33,7 +35,7 @@ class DedupCache:
             if max_entries is not None
             else int(settings.DEDUP_MAX_ENTRIES)
         )
-        # key -> (expires_at, result_dict)
+
         self._store: dict[str, tuple[float, dict]] = {}
         self._lock = asyncio.Lock()
 
@@ -78,7 +80,9 @@ class DedupCache:
     def _evict(self) -> None:
         """Drop already-expired entries to make room for new ones."""
         now = time.monotonic()
-        expired = [key for key, (expires_at, _) in self._store.items() if now >= expires_at]
+        expired = [
+            key for key, (expires_at, _) in self._store.items() if now >= expires_at
+        ]
         for key in expired:
             del self._store[key]
 
@@ -86,5 +90,4 @@ class DedupCache:
         return len(self._store)
 
 
-#: Process-wide instance shared by the gateway router.
 dedup_cache = DedupCache()

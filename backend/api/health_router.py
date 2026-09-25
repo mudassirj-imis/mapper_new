@@ -22,7 +22,6 @@ VERSION = "1.0.0"
 
 router = APIRouter(tags=["Health"])
 
-#: Monotonic clock at module import → process uptime reference.
 _STARTED = time.monotonic()
 
 

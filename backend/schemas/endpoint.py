@@ -7,7 +7,6 @@ stay camelCase there on purpose, exactly as the client sends them.
 
 from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -37,7 +36,6 @@ class EndpointCreate(BaseModel):
     tenant_id: str | None = None
     rate_limit_rpm: int | None = Field(default=60, ge=0)
 
-    # --- SFTP delivery mode -------------------------------------------------
     sftp_host: str | None = None
     sftp_port: int = 22
     sftp_username: str | None = None
@@ -46,7 +44,6 @@ class EndpointCreate(BaseModel):
     sftp_remote_path: str | None = None
     dynamic_filename_pattern: str | None = None
 
-    # --- Upstream authentication ---------------------------------------------
     api_id: str | None = None
     api_password: str | None = None
     api_auth_url: str | None = None
@@ -73,7 +70,6 @@ class EndpointUpdate(BaseModel):
     tenant_id: str | None = None
     rate_limit_rpm: int | None = Field(default=None, ge=0)
 
-    # --- SFTP delivery mode -------------------------------------------------
     sftp_host: str | None = None
     sftp_port: int | None = None
     sftp_username: str | None = None
@@ -82,7 +78,6 @@ class EndpointUpdate(BaseModel):
     sftp_remote_path: str | None = None
     dynamic_filename_pattern: str | None = None
 
-    # --- Upstream authentication ---------------------------------------------
     api_id: str | None = None
     api_password: str | None = None
     api_auth_url: str | None = None

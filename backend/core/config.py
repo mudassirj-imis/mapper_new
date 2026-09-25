@@ -17,15 +17,15 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-# Fields that accept human-friendly comma-separated strings (in addition to
-# JSON lists) when read from the environment. pydantic-settings JSON-decodes
-# complex fields directly in the source, before field validators run, so the
-# sources are subclassed below to pass raw strings through for these fields.
-_RAW_STRING_FIELDS = frozenset({
-    "CORS_ORIGINS", "SFTP_PRIVATE_KEY_PATHS",
-    "WEBHOOK_ALLOWED_HOSTS", "WEBHOOK_ALLOWED_CIDRS",
-    "UPSTREAM_API_TOKENS",
-})
+_RAW_STRING_FIELDS = frozenset(
+    {
+        "CORS_ORIGINS",
+        "SFTP_PRIVATE_KEY_PATHS",
+        "WEBHOOK_ALLOWED_HOSTS",
+        "WEBHOOK_ALLOWED_CIDRS",
+        "UPSTREAM_API_TOKENS",
+    }
+)
 
 
 class _RawStringDecodeMixin:
@@ -57,36 +57,19 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- Database ------------------------------------------------------------
-    # Async DSN consumed by ``backend.db.session`` (asyncpg driver).
     DATABASE_URL: str = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/api_mapper"
     )
 
-    # --- Security --------------------------------------------------------------
-    # No defaults on purpose: the app must fail fast when secrets are missing
-    # instead of silently running with publicly known values.
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_HOURS: int = 24
-    # AES-256-GCM key for encrypting stored credentials (hex string or
-    # passphrase, see ``backend.core.crypto``). Generate with:
-    #   python -c "import secrets; print(secrets.token_hex(32))"
+
     ENCRYPTION_KEY: str
 
-    # --- HTTP -----------------------------------------------------------------
-    # ``["*"]`` allows every origin; override per environment with either a
-    # JSON list ("[\"https://app.example.com\"]") or a comma-separated string.
     CORS_ORIGINS: list[str] = ["*"]
     API_TIMEOUT_SECONDS: int = 60
 
-    # --- Public mount point ----------------------------------------------------
-    # Path this service is served under, e.g. ``/mapper-new``. Only used to
-    # generate absolute URLs (Swagger UI's spec + OAuth2 redirect links); the
-    # reverse proxy is what actually serves the prefix, so leave this empty
-    # when the app is mounted at the domain root.
-    #
-    #   APP_ROOT_PATH=/mapper-new
     APP_ROOT_PATH: str = ""
 
     @field_validator("APP_ROOT_PATH", mode="before")
@@ -105,46 +88,22 @@ class Settings(BaseSettings):
             return ""
         return "/" + text.strip("/")
 
-    # --- Centralized authentication -----------------------------------------
-    # Base URL of the centralized SSPA/IMIS auth service.  The service is
-    # mounted at /auth; its login route is /auth/auth1/login.
-    # AUTH_SERVICE_URL=https://api.imis.com.pk:9001/auth
     AUTH_SERVICE_URL: str | None = None
-    # Explicit central-service AES key.  This stays server-side; never expose
-    # it as a VITE_* frontend variable.
+
     AUTH_SERVICE_ENCRYPTION_KEY: str | None = None
 
-    # --- Upstream authentication (shared .env login for protected targets) -------
-    # When all three are set, the gateway lazily exchanges these credentials for a
-    # bearer token by POSTing to UPSTREAM_AUTH_URL, then injects the token into
-    # upstream calls that have no explicit Authorization / X-Api-Token header of
-    # their own. Login fields are sent as ``email``/``password`` unless overridden.
     UPSTREAM_AUTH_URL: str | None = None
     UPSTREAM_AUTH_EMAIL: str | None = None
     UPSTREAM_AUTH_PASSWORD: str | None = None
-    # Some login endpoints (SSPA/IMIS) require an encrypted request AND return an
-    # encrypted response. When UPSTREAM_AUTH_DECRYPTION_KEY is set, the gateway
-    # uses it as the shared AES-256-GCM symmetric key to (a) encrypt the login
-    # request into UPSTREAM_AUTH_ENCRYPTED_FIELD and (b) decrypt
-    # UPSTREAM_AUTH_ENCRYPTED_FIELD from the response. Each value is
-    # base64(AES-256-GCM: nonce(12) + tag(16) + ciphertext), exactly matching the
-    # server's ``app/helper/aes.py`` (IV is ignored). The key must resolve to
-    # exactly 32 bytes: pass the server's AES_SECRET_KEY value, given as base64,
-    # hex, or a plain 32-char string (no hashing/derivation is applied).
     UPSTREAM_AUTH_DECRYPTION_KEY: str | None = None
     UPSTREAM_AUTH_ENCRYPTED_FIELD: str = "encrypted_data"
-    # Login request shape: field names in the POST body and whether it is sent as
-    # JSON (``{"email":..,"password":..}``) or form-encoded.
+
     UPSTREAM_AUTH_USERNAME_FIELD: str = "email"
     UPSTREAM_AUTH_PASSWORD_FIELD: str = "password"
-    UPSTREAM_AUTH_LOGIN_CONTENT_TYPE: str = "json"  # "json" | "form"
-    # Header to attach the token to. Default ``Authorization`` sends
-    # ``Authorization: Bearer <token>``; set ``X-Api-Token`` (with an empty
-    # prefix) to send ``X-Api-Token: <token>`` instead.
+    UPSTREAM_AUTH_LOGIN_CONTENT_TYPE: str = "json"
     UPSTREAM_AUTH_HEADER_NAME: str = "Authorization"
-    UPSTREAM_AUTH_TOKEN_PREFIX: str = "Bearer"  # "" -> send the token as-is
-    # Keys (or dotted paths) searched in the login response for the token/expiry.
-    # Lists may be overridden in .env as a JSON array string.
+    UPSTREAM_AUTH_TOKEN_PREFIX: str = "Bearer"
+
     UPSTREAM_AUTH_TOKEN_KEYS: list[str] = [
         "access_token",
         "token",
@@ -167,21 +126,10 @@ class Settings(BaseSettings):
         "data.expires_in",
         "result.expires_in",
     ]
-    # Require at least this many seconds of remaining life before a cached token
-    # is considered valid (refresh happens slightly ahead of real expiry).
     UPSTREAM_AUTH_MIN_TTL_SECONDS: int = 60
 
-    # --- Upstream static API tokens (host-scoped) --------------------------------
-    # Some upstreams (e.g. mamtasaath.com) do NOT use a login/JWT flow; they expect
-    # a fixed API token in Authorization / X-Api-Token. Map the upstream host to its
-    # token so the gateway sends the right credential per destination, without
-    # affecting other upstreams that use the shared login above.
-    #   UPSTREAM_API_TOKENS=mamtasaath.com=<token>,api.other.example=<token>
-    # A JSON object string is also accepted: {"mamtasaath.com": "<token>"}
     UPSTREAM_API_TOKENS: dict[str, str] = Field(default_factory=dict)
 
-    # None means use AsyncSSH's default trust files by OMITTING known_hosts.
-    # Passing known_hosts=None to AsyncSSH disables verification and is forbidden.
     SFTP_KNOWN_HOSTS_FILE: str | None = None
     SFTP_PRIVATE_KEY_PATHS: list[str] = Field(default_factory=list)
     SFTP_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
@@ -192,7 +140,6 @@ class Settings(BaseSettings):
     SFTP_MAX_CONCURRENT: int = Field(default=10, gt=0)
     SFTP_ADMISSION_TIMEOUT_SECONDS: float = Field(default=1.0, gt=0)
 
-    # Empty allowlists do not exempt any destination from private-address checks.
     WEBHOOK_ALLOWED_HOSTS: list[str] = Field(default_factory=list)
     WEBHOOK_ALLOWED_CIDRS: list[str] = Field(default_factory=list)
     WEBHOOK_MAX_JOBS: int = Field(default=100, gt=0)
@@ -204,7 +151,6 @@ class Settings(BaseSettings):
     WEBHOOK_RETRY_DELAY_SECONDS: float = Field(default=0.25, ge=0)
     WEBHOOK_SHUTDOWN_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
 
-    # Each policy owns bounded process-local state; cleanup must preserve guards.
     POLICY_MAX_ENDPOINTS: int = Field(default=10000, gt=0)
     POLICY_IDLE_TTL_SECONDS: float = Field(default=600.0, gt=0)
     POLICY_CLEANUP_INTERVAL_SECONDS: float = Field(default=60.0, gt=0)
@@ -215,15 +161,10 @@ class Settings(BaseSettings):
     DEDUP_MAX_FOLLOWERS: int = Field(default=1000, gt=0)
     DEDUP_MAX_FOLLOWERS_PER_KEY: int = Field(default=100, gt=0)
 
-    # --- Resilience (rate limiting + circuit breaker) -------------------------
-    # Per-endpoint budget fallback when ``api_endpoints.rate_limit_rpm`` is unset.
     RATE_LIMIT_DEFAULT_RPM: int = Field(default=60, ge=0)
-    # Coarse global per-client-IP guard for the /api surface (middleware).
     GLOBAL_RATE_LIMIT_RPM: int = Field(default=600, gt=0)
-    # Circuit breaker: open after this many failures inside the sliding window…
     CIRCUIT_FAILURE_THRESHOLD: int = Field(default=5, gt=0)
     CIRCUIT_WINDOW_SECONDS: float = Field(default=60.0, gt=0)
-    # …and auto-recover (reopen to a single-trial HALF_OPEN) after this timeout.
     CIRCUIT_RECOVERY_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0)
 
     @classmethod
@@ -248,8 +189,11 @@ class Settings(BaseSettings):
         )
 
     @field_validator(
-        "CORS_ORIGINS", "SFTP_PRIVATE_KEY_PATHS",
-        "WEBHOOK_ALLOWED_HOSTS", "WEBHOOK_ALLOWED_CIDRS", mode="before",
+        "CORS_ORIGINS",
+        "SFTP_PRIVATE_KEY_PATHS",
+        "WEBHOOK_ALLOWED_HOSTS",
+        "WEBHOOK_ALLOWED_CIDRS",
+        mode="before",
     )
     @classmethod
     def _parse_cors_origins(cls, value: Any) -> Any:

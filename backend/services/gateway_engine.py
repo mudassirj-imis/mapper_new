@@ -32,14 +32,26 @@ from backend.services.upstream_auth import apply_upstream_auth
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "GatewayEngine", "EndpointSnapshot", "MappingSnapshot", "ExecutionOutcome",
-    "FailureKind", "ExecutionSource",
+    "GatewayEngine",
+    "EndpointSnapshot",
+    "MappingSnapshot",
+    "ExecutionOutcome",
+    "FailureKind",
+    "ExecutionSource",
 ]
 
-FailureKind = Literal[
-    "not_found", "configuration", "upstream_http", "upstream_timeout",
-    "transport", "local_pool_timeout", "internal",
-] | None
+FailureKind = (
+    Literal[
+        "not_found",
+        "configuration",
+        "upstream_http",
+        "upstream_timeout",
+        "transport",
+        "local_pool_timeout",
+        "internal",
+    ]
+    | None
+)
 ExecutionSource = Literal["live", "mock", "cache", "policy"]
 
 
@@ -118,20 +130,23 @@ class ExecutionOutcome:
 
     @property
     def upstream_audit(self) -> Mapping[str, Any]:
-        return MappingProxyType({
-            **{key: value for key, value in self.result.items()
-               if key.startswith("external_")},
-            "external_response": self.result.get("data") if self.upstream_attempted else None,
-        })
+        return MappingProxyType(
+            {
+                **{
+                    key: value
+                    for key, value in self.result.items()
+                    if key.startswith("external_")
+                },
+                "external_response": self.result.get("data")
+                if self.upstream_attempted
+                else None,
+            }
+        )
 
     def to_result(self) -> dict[str, Any]:
         return _thaw(self.result)
 
 
-#: Columns the config-only endpoint lookup selects. Deliberately minimal:
-#: :func:`_endpoint_snapshot` reads only these, so the gateway never pulls the
-#: encrypted credential columns (``api_password`` / ``sftp_password``) into
-#: memory just to make a routing decision.
 _ENDPOINT_COLUMNS = (
     "id",
     "endpoint_code",
@@ -163,19 +178,19 @@ def _endpoint_snapshot(row):
         _mock_response=None,
     )
 
+
 def _http_failure(status: int) -> FailureKind:
     if status in (408, 504):
         return "upstream_timeout"
     return None if 200 <= status < 400 else "upstream_http"
 
-#: Marker for header mappings that carry a literal value instead of a lookup:
-#: ``target_parameter="static:X-Api-Key"`` sends ``X-Api-Key: <literal>``.
+
 _STATIC_PREFIX = "static:"
 
-#: Content type assumed when a mapped body is sent without an explicit one.
+
 _DEFAULT_CONTENT_TYPE = "application/json"
 
-#: Fast-fail budget for the connect phase of an upstream call.
+
 _CONNECT_TIMEOUT_SECONDS = 10.0
 
 
@@ -202,7 +217,6 @@ def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
 
-#: Message returned for endpoints whose stored URL is not callable over HTTP.
 _LOG_ONLY_MESSAGE = "Log-only endpoint, no external call made"
 
 
@@ -268,15 +282,10 @@ class GatewayEngine:
         self.db = db
         self.http_client = http_client
         self.timeout = timeout
-        # A bare ``int`` per-request timeout would silently drop the client's
-        # fast connect guard, so the engine pins its own composite timeout.
+
         self._request_timeout = httpx.Timeout(
             float(timeout), connect=min(_CONNECT_TIMEOUT_SECONDS, float(timeout))
         )
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     async def process_request(
         self,
@@ -307,7 +316,9 @@ class GatewayEngine:
                 )
                 result = outcome.to_result()
         except Exception as exc:
-            logger.exception("Gateway call %s: unexpected pipeline failure", result["request_id"])
+            logger.exception(
+                "Gateway call %s: unexpected pipeline failure", result["request_id"]
+            )
             result["status_code"] = result["status_code"] or 500
             result["error"] = f"Gateway encountered an internal error: {exc}"
         finally:
@@ -322,11 +333,9 @@ class GatewayEngine:
             "request_id": str(uuid4()),
             "endpoint_id": None,
             "tenant_id": None,
-            # Internal side (caller -> gateway).
             "method": method,
             "path": url,
             "request_headers": client_headers,
-            # Outcome.
             "success": False,
             "data": None,
             "status_code": None,
@@ -334,7 +343,6 @@ class GatewayEngine:
             "total_time_ms": None,
             "response_headers": None,
             "error": None,
-            # External side (gateway -> upstream).
             "external_request_url": None,
             "external_request_method": None,
             "external_request_headers": None,
@@ -343,7 +351,6 @@ class GatewayEngine:
             "external_response_headers": None,
             "external_status_code": None,
             "external_response_time_ms": None,
-            # Diagnostics for the log writer.
             "status": CallStatusEnum.FAILED.value,
             "timeout_configured": self.timeout,
         }
@@ -373,8 +380,6 @@ class GatewayEngine:
         failure_kind: FailureKind = None
         upstream_attempted = False
 
-        # Mock short-circuit: returns the configured response without any
-        # mapping load or upstream I/O (sub-millisecond, no network access).
         if endpoint.mock_enabled:
             result.update(
                 mock_service.build_mock_result(
@@ -411,9 +416,6 @@ class GatewayEngine:
                 return ExecutionOutcome(result, failure_kind="configuration")
 
             if not upstream_url.lower().startswith(("http://", "https://")):
-                # No scheme means there is no host to call. Treat the endpoint
-                # as log-only (as the legacy engine did) instead of letting
-                # httpx fail the call with an unsupported-protocol 502.
                 result.update(
                     _log_only_result(
                         request_id=result["request_id"],
@@ -500,26 +502,33 @@ class GatewayEngine:
         self._ensure_read_only()
         try:
             return await self._resolve_endpoint(
-                endpoint_id, str(target_url or "").strip(),
+                endpoint_id,
+                str(target_url or "").strip(),
                 str(target_method or "").strip().upper(),
             )
         finally:
             await self._finish_read()
 
-    async def load_mappings(self, endpoint: EndpointSnapshot) -> tuple[MappingSnapshot, ...]:
+    async def load_mappings(
+        self, endpoint: EndpointSnapshot
+    ) -> tuple[MappingSnapshot, ...]:
         """One active-mapping query, detached before ending the read tx."""
         self._ensure_read_only()
         try:
-            rows = await parameter_service.list_parameters(self.db, endpoint.id, active_only=True)
-            return tuple(MappingSnapshot(
-                row.source_parameter, row.target_parameter, row.parameter_type, row.data_type
-            ) for row in rows)
+            rows = await parameter_service.list_parameters(
+                self.db, endpoint.id, active_only=True
+            )
+            return tuple(
+                MappingSnapshot(
+                    row.source_parameter,
+                    row.target_parameter,
+                    row.parameter_type,
+                    row.data_type,
+                )
+                for row in rows
+            )
         finally:
             await self._finish_read()
-
-    # ------------------------------------------------------------------
-    # Endpoint resolution
-    # ------------------------------------------------------------------
 
     async def _resolve_endpoint(
         self, endpoint_id: int | str | None, target_url: str, target_method: str
@@ -533,8 +542,9 @@ class GatewayEngine:
         identifier = _as_int(endpoint_id)
         if identifier is not None:
             result = await self.db.execute(
-                select(*(getattr(ApiEndpoint, name) for name in _ENDPOINT_COLUMNS))
-                .where(ApiEndpoint.id == identifier)
+                select(
+                    *(getattr(ApiEndpoint, name) for name in _ENDPOINT_COLUMNS)
+                ).where(ApiEndpoint.id == identifier)
             )
             endpoint = _endpoint_snapshot(result.mappings().first())
             if endpoint is not None:
@@ -548,16 +558,14 @@ class GatewayEngine:
         self, target_url: str, target_method: str
     ) -> EndpointSnapshot | None:
         """Active endpoint whose ``target_api_url`` ends with ``target_url``."""
-        statement = select(*(getattr(ApiEndpoint, name) for name in _ENDPOINT_COLUMNS)).where(
+        statement = select(
+            *(getattr(ApiEndpoint, name) for name in _ENDPOINT_COLUMNS)
+        ).where(
             ApiEndpoint.is_active == True,
-            # ``endswith`` semantics keep short paths ("/v1/orders") matching
-            # against fully-qualified stored URLs.
             ApiEndpoint.target_api_url.like(f"%{target_url}"),
         )
         if target_method:
-            statement = statement.where(
-                func.upper(ApiEndpoint.method) == target_method
-            )
+            statement = statement.where(func.upper(ApiEndpoint.method) == target_method)
         statement = statement.order_by(ApiEndpoint.created_at.desc()).limit(1)
 
         result = await self.db.execute(statement)
@@ -587,9 +595,7 @@ class GatewayEngine:
             ApiEndpoint.id, ApiEndpoint.endpoint_code, ApiEndpoint.target_api_url
         ).where(ApiEndpoint.is_active == True)
         if target_method:
-            statement = statement.where(
-                func.upper(ApiEndpoint.method) == target_method
-            )
+            statement = statement.where(func.upper(ApiEndpoint.method) == target_method)
         statement = statement.order_by(ApiEndpoint.created_at.desc()).limit(limit)
 
         result = await self.db.execute(statement)
@@ -601,10 +607,6 @@ class GatewayEngine:
             }
             for endpoint in result.all()
         ]
-
-    # ------------------------------------------------------------------
-    # Parameter transformation
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _transform_parameters(
@@ -622,10 +624,7 @@ class GatewayEngine:
         passed through (minus ``Host``, recomputed by httpx for the real
         target), with mapped headers layered on top.
         """
-        # No field-level rules: pass the caller's payload through unchanged
-        # (identity mapping) instead of dropping it. Without this, an endpoint
-        # with no mappings would always forward an empty/absent body, which most
-        # upstreams (e.g. POST /referral/v1/ref_crp_beneficiary) reject with 422.
+
         if not mappings:
             return (
                 dict(request_data),
@@ -668,7 +667,7 @@ class GatewayEngine:
             target = str(mapping.target_parameter)
             source = str(mapping.source_parameter)
             if target.lower().startswith(_STATIC_PREFIX):
-                header_params[source] = target[len(_STATIC_PREFIX):]
+                header_params[source] = target[len(_STATIC_PREFIX) :]
             elif target.lower() in client_lower:
                 header_params[source] = client_lower[target.lower()]
             else:
@@ -682,10 +681,6 @@ class GatewayEngine:
             header_params["Content-Type"] = _DEFAULT_CONTENT_TYPE
 
         return body_params, header_params, query_params
-
-    # ------------------------------------------------------------------
-    # Upstream call
-    # ------------------------------------------------------------------
 
     async def _call_upstream(
         self,
@@ -717,10 +712,6 @@ class GatewayEngine:
 
         started = time.perf_counter()
         try:
-            # Inject the shared upstream bearer token (from .env) when the caller
-            # did not already supply its own Authorization / X-Api-Token header.
-            # Best effort: a missing login config or failed login leaves the
-            # headers untouched and the upstream's own auth error surfaces.
             await apply_upstream_auth(header_params, self.http_client, url)
 
             request = self.http_client.build_request(
@@ -731,9 +722,7 @@ class GatewayEngine:
                 params=query_params if query_params else None,
                 timeout=self._request_timeout,
             )
-            # The built request already carries the client's default headers
-            # merged in — capture it so the audit trail shows what really
-            # goes on the wire, not just the mapped subset.
+
             outcome["external_request_headers"] = dict(request.headers)
             outcome["external_request_url"] = str(request.url)
             outcome["external_request_method"] = str(request.method)
@@ -762,14 +751,16 @@ class GatewayEngine:
             return outcome
         except httpx.PoolTimeout:
             elapsed = _elapsed_ms(started)
-            outcome.update({
-                "failure_kind": "local_pool_timeout",
-                "upstream_attempted": False,
-                "status_code": 408,
-                "response_time_ms": elapsed,
-                "external_response_time_ms": elapsed,
-                "error": f"Request timeout after {self.timeout} seconds",
-            })
+            outcome.update(
+                {
+                    "failure_kind": "local_pool_timeout",
+                    "upstream_attempted": False,
+                    "status_code": 408,
+                    "response_time_ms": elapsed,
+                    "external_response_time_ms": elapsed,
+                    "error": f"Request timeout after {self.timeout} seconds",
+                }
+            )
             return outcome
         except httpx.TimeoutException:
             elapsed = _elapsed_ms(started)
@@ -798,17 +789,15 @@ class GatewayEngine:
             logger.warning("Upstream connection error: %s %s — %s", method, url, exc)
             return outcome
         except httpx.HTTPStatusError as exc:
-            # Unreachable while the engine never calls ``raise_for_status``,
-            # kept as a guard in case that changes.
             elapsed = _elapsed_ms(started)
-            status_code = (
-                exc.response.status_code if exc.response is not None else 502
-            )
+            status_code = exc.response.status_code if exc.response is not None else 502
             outcome.update(
                 {
                     "success": False,
                     "failure_kind": _http_failure(status_code),
-                    "external_status_code": status_code if exc.response is not None else None,
+                    "external_status_code": status_code
+                    if exc.response is not None
+                    else None,
                     "status_code": status_code,
                     "response_time_ms": elapsed,
                     "external_response_time_ms": elapsed,

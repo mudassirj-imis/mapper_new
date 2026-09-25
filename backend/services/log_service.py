@@ -58,11 +58,7 @@ async def list_logs(
 
     conditions = []
 
-    endpoint_int = (
-        _as_int(endpoint_id)
-        if endpoint_id is not None
-        else None
-    )
+    endpoint_int = _as_int(endpoint_id) if endpoint_id is not None else None
 
     if endpoint_int is not None:
         conditions.append(ApiCallLog.endpoint_id == endpoint_int)
@@ -73,12 +69,8 @@ async def list_logs(
         if value in _VALID_STATUS:
             conditions.append(ApiCallLog.status == value)
 
-    # Method belongs to api_endpoint, not api_call_log.
     if method:
-        conditions.append(
-            func.upper(ApiEndpoint.method)
-            == str(method).strip().upper()
-        )
+        conditions.append(func.upper(ApiEndpoint.method) == str(method).strip().upper())
 
     start = _as_datetime(date_from)
 
@@ -93,7 +85,6 @@ async def list_logs(
     page = max(1, int(page))
     per_page = max(1, min(int(per_page), _MAX_PER_PAGE))
 
-    # Count logs using the same endpoint/method filtering.
     count_stmt = (
         select(func.count())
         .select_from(ApiCallLog)
@@ -107,13 +98,6 @@ async def list_logs(
     count_result = await db.execute(count_stmt)
     total = int(count_result.scalar() or 0)
 
-    # Join endpoint so the frontend contract can receive:
-    #   request_id -> log.id
-    #   method     -> api_endpoint.method
-    #   path       -> api_endpoint.source_api_url
-    #
-    # Order by primary key only to avoid the expensive created_at/id
-    # filesort on the existing MySQL database.
     stmt = (
         select(ApiCallLog, ApiEndpoint)
         .join(
@@ -131,45 +115,38 @@ async def list_logs(
     rows = result.all()
 
     items = [
-    CallLogSummary(
-        id=log.id,
-        endpoint_id=log.endpoint_id,
-
-        request_id=str(log.id),
-
-        method=endpoint.method,
-        path=endpoint.source_api_url,
-
-        status=log.status,
-        overall_status=(
-            True
-            if log.status == "SUCCESS"
-            else False
-            if log.status is not None
-            else None
-        ),
-
-        internal_request_headers=None,
-        internal_request_body=log.source_request_payload,
-        internal_api_client_response=log.source_response,
-        internal_api_client_status=None,
-
-        external_request_url=endpoint.target_api_url,
-        external_request_method=endpoint.method,
-        external_request_headers=None,
-        external_request_body=log.target_request_payload,
-        external_query_params=None,
-        external_response=log.target_response,
-        external_response_headers=None,
-
-        external_response_time_ms=log.response_time_ms,
-        external_status_code=None,
-
-        total_time_ms=log.response_time_ms,
-        created_at=log.created_at,
-    )
-    for log, endpoint in rows
-]
+        CallLogSummary(
+            id=log.id,
+            endpoint_id=log.endpoint_id,
+            request_id=str(log.id),
+            method=endpoint.method,
+            path=endpoint.source_api_url,
+            status=log.status,
+            overall_status=(
+                True
+                if log.status == "SUCCESS"
+                else False
+                if log.status is not None
+                else None
+            ),
+            internal_request_headers=None,
+            internal_request_body=log.source_request_payload,
+            internal_api_client_response=log.source_response,
+            internal_api_client_status=None,
+            external_request_url=endpoint.target_api_url,
+            external_request_method=endpoint.method,
+            external_request_headers=None,
+            external_request_body=log.target_request_payload,
+            external_query_params=None,
+            external_response=log.target_response,
+            external_response_headers=None,
+            external_response_time_ms=log.response_time_ms,
+            external_status_code=None,
+            total_time_ms=log.response_time_ms,
+            created_at=log.created_at,
+        )
+        for log, endpoint in rows
+    ]
 
     return total, items, page, per_page
 
@@ -204,15 +181,11 @@ async def get_log(
     return CallLogResponse(
         id=log.id,
         endpoint_id=log.endpoint_id,
-
-        # Frontend contract
         request_id=str(log.id),
         method=endpoint.method,
         path=endpoint.source_api_url,
-
         status=log.status,
         error_message=log.error_message,
-
         overall_status=(
             True
             if log.status == "SUCCESS"
@@ -220,14 +193,10 @@ async def get_log(
             if log.status is not None
             else None
         ),
-
-        # Internal/source request
         internal_request_headers=None,
         internal_request_body=log.source_request_payload,
         internal_api_client_response=log.source_response,
         internal_api_client_status=None,
-
-        # External/target request
         external_request_url=endpoint.target_api_url,
         external_request_method=endpoint.method,
         external_request_headers=None,
@@ -235,16 +204,11 @@ async def get_log(
         external_query_params=None,
         external_response=log.target_response,
         external_response_headers=None,
-
-        # Timing
         external_response_time_ms=log.response_time_ms,
         total_time_ms=log.response_time_ms,
-
-        # Not available in current MySQL schema
         external_status_code=None,
         full_log=None,
         timeout_configured=None,
         tenant_id=None,
-
         created_at=log.created_at,
     )

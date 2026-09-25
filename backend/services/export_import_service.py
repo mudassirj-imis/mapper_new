@@ -28,16 +28,30 @@ __all__ = [
     "import_data",
 ]
 
-#: Column order used by the CSV interchange format.
 _CSV_COLUMNS = [
-    "endpoint_code", "source_api_url", "target_api_url", "method", "protocol",
-    "description", "mock_enabled", "tenant_id", "rate_limit_rpm",
-    "source_parameter", "target_parameter", "data_type", "parameter_type",
+    "endpoint_code",
+    "source_api_url",
+    "target_api_url",
+    "method",
+    "protocol",
+    "description",
+    "mock_enabled",
+    "tenant_id",
+    "rate_limit_rpm",
+    "source_parameter",
+    "target_parameter",
+    "data_type",
+    "parameter_type",
     "parameter_is_active",
 ]
 
 _NON_EXPORT_KEYS = (
-    "id", "created_at", "updated_at", "created_by", "updated_by", "parameters",
+    "id",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "updated_by",
+    "parameters",
 )
 
 
@@ -53,13 +67,30 @@ def _serialize_endpoint(endpoint) -> dict[str, Any]:
     data = {
         col: getattr(endpoint, col)
         for col in (
-            "endpoint_code", "source_api_url", "target_api_url", "method",
-            "protocol", "request_content_type", "require_authentication",
-            "require_correlation_id", "description", "mock_response",
-            "mock_enabled", "tenant_id", "rate_limit_rpm", "is_hidden",
-            "sftp_host", "sftp_port", "sftp_username", "sftp_password",
-            "sftp_private_key_path", "sftp_remote_path", "dynamic_filename_pattern",
-            "api_id", "api_password", "api_auth_url",
+            "endpoint_code",
+            "source_api_url",
+            "target_api_url",
+            "method",
+            "protocol",
+            "request_content_type",
+            "require_authentication",
+            "require_correlation_id",
+            "description",
+            "mock_response",
+            "mock_enabled",
+            "tenant_id",
+            "rate_limit_rpm",
+            "is_hidden",
+            "sftp_host",
+            "sftp_port",
+            "sftp_username",
+            "sftp_password",
+            "sftp_private_key_path",
+            "sftp_remote_path",
+            "dynamic_filename_pattern",
+            "api_id",
+            "api_password",
+            "api_auth_url",
         )
         if hasattr(endpoint, col)
     }
@@ -84,11 +115,6 @@ async def _all_endpoints(db):
     return await endpoint_service.list_endpoints(
         db, skip=0, limit=int(settings.POLICY_MAX_ENDPOINTS)
     )
-
-
-# ---------------------------------------------------------------------------
-# Exports
-# ---------------------------------------------------------------------------
 
 
 async def export_json(db) -> bytes:
@@ -124,13 +150,15 @@ async def export_csv(db) -> bytes:
                 "rate_limit_rpm": ep.rate_limit_rpm,
             }
             if param is not None:
-                row.update({
-                    "source_parameter": param.source_parameter,
-                    "target_parameter": param.target_parameter,
-                    "data_type": param.data_type,
-                    "parameter_type": param.parameter_type,
-                    "parameter_is_active": param.is_active,
-                })
+                row.update(
+                    {
+                        "source_parameter": param.source_parameter,
+                        "target_parameter": param.target_parameter,
+                        "data_type": param.data_type,
+                        "parameter_type": param.parameter_type,
+                        "parameter_is_active": param.is_active,
+                    }
+                )
             writer.writerow(row)
     return buffer.getvalue().encode("utf-8-sig")
 
@@ -141,21 +169,22 @@ async def export_postman(db) -> bytes:
     for ep in endpoints:
         url = ep.source_api_url or ep.target_api_url or ""
         body_params = [
-            p for p in (ep.parameters or [])
+            p
+            for p in (ep.parameters or [])
             if str(p.parameter_type or "BODY").upper() == "BODY"
         ]
         body = "{}"
         if body_params:
-            body = json.dumps(
-                {p.source_parameter: "" for p in body_params}, indent=2
-            )
+            body = json.dumps({p.source_parameter: "" for p in body_params}, indent=2)
         request = {"method": str(ep.method or "POST").upper(), "url": url}
         if body_params:
             request["body"] = {"mode": "raw", "raw": body}
-        items.append({
-            "name": ep.endpoint_code or str(ep.id),
-            "request": request,
-        })
+        items.append(
+            {
+                "name": ep.endpoint_code or str(ep.id),
+                "request": request,
+            }
+        )
     collection = {
         "info": {
             "name": "API Mapper & Gateway — Exports",
@@ -168,11 +197,6 @@ async def export_postman(db) -> bytes:
     return json.dumps(collection, indent=2, default=_json_default).encode("utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Imports
-# ---------------------------------------------------------------------------
-
-
 def _parse_json_import(raw: bytes):
     try:
         document = json.loads(raw.decode("utf-8"))
@@ -180,10 +204,12 @@ def _parse_json_import(raw: bytes):
         return [], [{"error": f"Invalid JSON: {exc}"}]
     entries = []
     for ep in document.get("endpoints", []) or []:
-        entries.append({
-            "endpoint": _strip_metadata(dict(ep)),
-            "parameters": list(ep.get("parameters", []) or []),
-        })
+        entries.append(
+            {
+                "endpoint": _strip_metadata(dict(ep)),
+                "parameters": list(ep.get("parameters", []) or []),
+            }
+        )
     return entries, []
 
 
@@ -225,13 +251,15 @@ def _parse_csv_import(raw: bytes):
                 },
                 "parameters": [],
             }
-        groups[key]["parameters"].append({
-            "source_parameter": row.get("source_parameter"),
-            "target_parameter": row.get("target_parameter"),
-            "data_type": row.get("data_type"),
-            "parameter_type": row.get("parameter_type"),
-            "is_active": _as_bool(row.get("parameter_is_active")),
-        })
+        groups[key]["parameters"].append(
+            {
+                "source_parameter": row.get("source_parameter"),
+                "target_parameter": row.get("target_parameter"),
+                "data_type": row.get("data_type"),
+                "parameter_type": row.get("parameter_type"),
+                "is_active": _as_bool(row.get("parameter_is_active")),
+            }
+        )
     return [groups[k] for k in order], []
 
 
@@ -365,7 +393,11 @@ def _parse_postman_import(raw: bytes):
                 parsed = {}
             if isinstance(parsed, dict):
                 parameters = [
-                    {"source_parameter": k, "target_parameter": k, "parameter_type": "BODY"}
+                    {
+                        "source_parameter": k,
+                        "target_parameter": k,
+                        "parameter_type": "BODY",
+                    }
                     for k in parsed
                 ]
 
@@ -403,13 +435,15 @@ async def _persist_entry(db, entry: dict) -> tuple[int, int]:
         if not source or not target:
             continue
         is_active = _as_bool(p.get("is_active"))
-        parameters.append(ParameterCreate(
-            source_parameter=str(source),
-            target_parameter=str(target),
-            data_type=p.get("data_type") or DataTypeEnum.STRING,
-            parameter_type=p.get("parameter_type") or ParamTypeEnum.BODY,
-            is_active=is_active,
-        ))
+        parameters.append(
+            ParameterCreate(
+                source_parameter=str(source),
+                target_parameter=str(target),
+                data_type=p.get("data_type") or DataTypeEnum.STRING,
+                parameter_type=p.get("parameter_type") or ParamTypeEnum.BODY,
+                is_active=is_active,
+            )
+        )
     created = await parameter_service.bulk_create_parameters_flush(
         db, endpoint.id, parameters
     )
@@ -426,8 +460,12 @@ async def import_data(db, kind: str, raw: bytes) -> dict[str, Any]:
     elif kind == "postman":
         entries, errors = _parse_postman_import(raw)
     else:
-        return {"success": False, "imported_endpoints": 0, "imported_mappings": 0,
-                "errors": [{"error": f"Unsupported import format: {kind}"}]}
+        return {
+            "success": False,
+            "imported_endpoints": 0,
+            "imported_mappings": 0,
+            "errors": [{"error": f"Unsupported import format: {kind}"}],
+        }
 
     imported_endpoints = 0
     imported_mappings = 0

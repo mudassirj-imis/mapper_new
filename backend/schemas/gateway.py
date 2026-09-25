@@ -38,7 +38,6 @@ class MapAndCallResponse(BaseModel):
     external_response_headers: dict[str, Any] | None = None
     error: str | None = None
 
-    # --- Extended audit trail -------------------------------------------------
     request_id: str | None = None
     external_request_url: str | None = None
     external_request_method: str | None = None

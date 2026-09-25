@@ -13,9 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_active_user, get_db
 from backend.services.central_auth import CentralUser
 
-# Protected routes receive the centralized identity, not the local ORM user.
 User = CentralUser
-from backend.schemas.log import CallLogListResponse, CallLogResponse, CallLogSummary
+from backend.schemas.log import CallLogListResponse, CallLogResponse
 from backend.services import log_service
 
 __all__ = ["router"]

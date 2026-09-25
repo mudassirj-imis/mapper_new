@@ -48,7 +48,6 @@ class RateLimiter:
         if rpm is None or rpm < 0:
             rpm = settings.RATE_LIMIT_DEFAULT_RPM
         if rpm <= 0:
-            # An explicit zero budget rejects everything (no window needed).
             return RateLimitDecision(False, retry_after=int(self._window))
 
         budget = int(rpm)
@@ -56,7 +55,6 @@ class RateLimiter:
             now = time.monotonic()
             stamps = self._requests[key]
 
-            # Drop timestamps that fell out of the trailing window.
             while stamps and now - stamps[0] >= self._window:
                 stamps.popleft()
 
@@ -73,5 +71,4 @@ class RateLimiter:
         return len(self._requests)
 
 
-#: Process-wide instance shared by the gateway router and the middleware.
 rate_limiter = RateLimiter()

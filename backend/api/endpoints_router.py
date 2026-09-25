@@ -27,7 +27,6 @@ from backend.api.deps import get_current_active_user, get_db
 from backend.models import ParamTypeEnum, ParameterMapping, WebhookEvent
 from backend.services.central_auth import CentralUser
 
-# Protected routes receive the centralized identity, not the local ORM user.
 User = CentralUser
 from backend.schemas.common import SuccessResponse
 from backend.schemas.endpoint import (
@@ -48,11 +47,6 @@ __all__ = ["router"]
 router = APIRouter(tags=["API Endpoints"])
 
 _PARAM_TYPE_VALUES = {member.value for member in ParamTypeEnum}
-
-
-# ---------------------------------------------------------------------------
-# Complete-mapping helpers
-# ---------------------------------------------------------------------------
 
 
 def _resolve_param_type(item: MappingItem) -> str:
@@ -80,11 +74,7 @@ def _resolve_param_type(item: MappingItem) -> str:
 
 def _enabled_rows(mappings: list[MappingItem]) -> list[MappingItem]:
     """Rows carrying an enabled, complete source -> target pair."""
-    return [
-        m
-        for m in mappings
-        if m.enabled and m.sourceField and m.targetField
-    ]
+    return [m for m in mappings if m.enabled and m.sourceField and m.targetField]
 
 
 def _request_signature(mappings: list[MappingItem]) -> str:
@@ -139,9 +129,7 @@ def _generate_description(
         parts.append(f"Target: {target['name']}")
 
     parts.append(f"Mapped: {len(_enabled_rows(mappings))} fields")
-    parts.append(
-        f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    )
+    parts.append(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     return " | ".join(parts)
 
@@ -160,11 +148,6 @@ def _not_found(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=detail,
     )
-
-
-# ---------------------------------------------------------------------------
-# Endpoint CRUD
-# ---------------------------------------------------------------------------
 
 
 @router.get(
@@ -331,11 +314,6 @@ async def toggle_api_endpoint(
     return endpoint
 
 
-# ---------------------------------------------------------------------------
-# Complete mapping (frontend editor contract)
-# ---------------------------------------------------------------------------
-
-
 @router.post(
     "/mappings/complete",
     response_model=CompleteMappingResponse,
@@ -369,10 +347,7 @@ async def save_complete_mapping(
             existing.id,
         )
 
-        if (
-            _request_signature(payload.mappings)
-            == _stored_signature(stored)
-        ):
+        if _request_signature(payload.mappings) == _stored_signature(stored):
             return CompleteMappingResponse(
                 success=True,
                 warning=True,
@@ -505,10 +480,7 @@ async def update_complete_mapping(
             duplicate.id,
         )
 
-        if (
-            _request_signature(payload.mappings)
-            == _stored_signature(duplicate_params)
-        ):
+        if _request_signature(payload.mappings) == _stored_signature(duplicate_params):
             return CompleteMappingResponse(
                 success=True,
                 warning=True,

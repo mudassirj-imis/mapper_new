@@ -21,7 +21,6 @@ from backend.services.rate_limiter import RateLimiter
 
 __all__ = ["RateLimitMiddleware"]
 
-#: Paths exempt from the global guard (health probes called by operators/load balancers).
 _EXEMPT_PATHS = ("/api/health",)
 
 

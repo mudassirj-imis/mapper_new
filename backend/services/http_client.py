@@ -17,7 +17,6 @@ __all__ = ["create_http_client", "get_http_client"]
 #: Connection pool sizing: up to 100 sockets, 20 kept alive between calls.
 _LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=20)
 
-#: The connect phase fails fast; the read phase honours API_TIMEOUT_SECONDS.
 _CONNECT_TIMEOUT_SECONDS = 10.0
 
 
