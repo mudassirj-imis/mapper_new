@@ -20,6 +20,7 @@ with (
 ):
     from backend.api.health_router import health
     from backend.middleware.rate_limit import RateLimitMiddleware
+    from backend.models import CallStatusEnum
     from backend.services import log_service
     from backend.services.circuit_breaker import CircuitBreaker, CircuitState
     from backend.services.dedup import DedupCache
@@ -221,6 +222,53 @@ class LogServiceTests(unittest.IsolatedAsyncioTestCase):
         total, items, *_ = await log_service.list_logs(db, status="bogus")
         self.assertEqual(total, 0)
         self.assertEqual(items, [])
+
+
+class LogOnlyEndpointTests(unittest.IsolatedAsyncioTestCase):
+    """A ``source_api_url`` with no scheme is logged, never fetched.
+
+    Mirrors the legacy engine, which skipped the external call for those
+    endpoints (``/v1/audio/play`` and friends) and still reported success
+    instead of surfacing httpx's unsupported-protocol error.
+    """
+
+    async def test_relative_source_url_skips_the_upstream_call(self):
+        endpoint = endpoint_snapshot(source_api_url="/v1/audio/play", method="GET")
+        client = make_client()
+
+        outcome = await GatewayEngine(make_db(), client).execute_resolved(
+            endpoint,
+            {"draw": 1},
+            {},
+            "/v1/audio/play",
+            "GET",
+            mappings=(),
+        )
+
+        result = outcome.to_result()
+        self.assertTrue(outcome.success)
+        self.assertEqual(outcome.source, "policy")
+        self.assertFalse(outcome.upstream_attempted)
+        self.assertIsNone(outcome.failure_kind)
+        self.assertEqual(result["status_code"], 200)
+        self.assertEqual(result["status"], CallStatusEnum.SUCCESS.value)
+        self.assertIsNone(result["error"])
+        self.assertEqual(
+            result["data"], {"message": "Log-only endpoint, no external call made"}
+        )
+        self.assertIsNone(result["external_request_url"])
+        client.send.assert_not_awaited()
+
+    async def test_absolute_source_url_still_reaches_the_upstream(self):
+        client = make_client(status=200)
+
+        outcome = await GatewayEngine(make_db(), client).execute_resolved(
+            endpoint_snapshot(), {}, mappings=()
+        )
+
+        self.assertEqual(outcome.source, "live")
+        self.assertTrue(outcome.upstream_attempted)
+        client.send.assert_awaited()
 
 
 class MockShortCircuitTests(unittest.IsolatedAsyncioTestCase):

@@ -1,5 +1,7 @@
 """Authentication and user schemas."""
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -11,12 +13,31 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    """Login result — ``token`` is only present on success."""
+    """Normalized response consumed by the mapper frontend."""
 
     success: bool
     message: str
     token: str | None = None
+    refresh_token: str | None = None
+    expires_in: int | None = None
     email: str | None = None
+    user: dict[str, Any] | None = None
+
+
+class RefreshRequest(BaseModel):
+    """Refresh token issued by the centralized auth service."""
+
+    refresh_token: str
+
+
+class RefreshResponse(BaseModel):
+    """Normalized refresh response."""
+
+    success: bool
+    message: str
+    token: str | None = None
+    refresh_token: str | None = None
+    expires_in: int | None = None
 
 
 class TokenData(BaseModel):

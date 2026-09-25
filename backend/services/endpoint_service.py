@@ -15,7 +15,7 @@ session cannot write it back to the database.
 """
 
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,14 +47,20 @@ def generate_endpoint_code() -> str:
     return f"EP-{uuid4().hex[:8].upper()}"
 
 
-def _as_uuid(value: str | UUID | None) -> UUID | None:
-    """Best-effort conversion of ``value`` to :class:`uuid.UUID`."""
-    if isinstance(value, UUID):
+def _as_int(value: object) -> int | None:
+    """Best-effort conversion of ``value`` to the integer endpoint id.
+
+    ``api_endpoint.id`` is an ``INT`` auto-increment column, so ids arrive as
+    integers (typed path parameters) or numeric strings. The previous UUID
+    coercion turned *every* id into a miss, so registered endpoints answered
+    404 and the mapping editor never loaded.
+    """
+    if isinstance(value, int):
         return value
-    if value is None:
+    if value is None or value == "":
         return None
     try:
-        return UUID(str(value))
+        return int(str(value).strip())
     except (AttributeError, TypeError, ValueError):
         return None
 
@@ -89,10 +95,10 @@ def _decrypt_sensitive(endpoint: ApiEndpoint) -> ApiEndpoint:
 
 
 async def _fetch_by_id(
-    db: AsyncSession, endpoint_id: str | UUID
+    db: AsyncSession, endpoint_id: int | str
 ) -> ApiEndpoint | None:
     """Plain single-row fetch (no eager loading, credentials left encrypted)."""
-    identifier = _as_uuid(endpoint_id)
+    identifier = _as_int(endpoint_id)
     if identifier is None:
         return None
     result = await db.execute(select(ApiEndpoint).where(ApiEndpoint.id == identifier))
@@ -129,20 +135,20 @@ async def list_endpoints(
             )
         )
     if is_active is not None:
-        statement = statement.where(ApiEndpoint.is_active.is_(is_active))
+        statement = statement.where(ApiEndpoint.is_active == is_active)
 
     result = await db.execute(statement)
     return [_decrypt_sensitive(endpoint) for endpoint in result.scalars().all()]
 
 
 async def get_endpoint(
-    db: AsyncSession, endpoint_id: str | UUID
+    db: AsyncSession, endpoint_id: int | str
 ) -> ApiEndpoint | None:
     """Fetch one endpoint (parameters eager-loaded) with credentials decrypted.
 
-    Returns ``None`` when the id is unknown (or not a valid UUID).
+    Returns ``None`` when the id is unknown (or not a valid integer id).
     """
-    identifier = _as_uuid(endpoint_id)
+    identifier = _as_int(endpoint_id)
     if identifier is None:
         return None
     result = await db.execute(
@@ -182,7 +188,7 @@ async def create_endpoint(db: AsyncSession, data: dict[str, Any]) -> ApiEndpoint
 
 
 async def update_endpoint(
-    db: AsyncSession, endpoint_id: str | UUID, data: dict[str, Any]
+    db: AsyncSession, endpoint_id: int | str, data: dict[str, Any]
 ) -> ApiEndpoint | None:
     """Apply a partial update — only the provided keys are touched.
 
@@ -202,7 +208,7 @@ async def update_endpoint(
 
 
 async def delete_endpoint(
-    db: AsyncSession, endpoint_id: str | UUID, hard: bool = False
+    db: AsyncSession, endpoint_id: int | str, hard: bool = False
 ) -> bool:
     """Delete an endpoint: soft (``is_active=False``) or hard (row removed).
 
@@ -232,7 +238,7 @@ async def check_duplicate(
     source_url: str,
     target_url: str,
     method: str,
-    exclude_id: str | UUID | None = None,
+    exclude_id: int | str | None = None,
 ) -> ApiEndpoint | None:
     """Return an active endpoint matching source/target URL + method, if any.
 
@@ -241,13 +247,13 @@ async def check_duplicate(
     statement = select(ApiEndpoint).where(
         ApiEndpoint.source_api_url == source_url,
         ApiEndpoint.target_api_url == target_url,
-        ApiEndpoint.is_active.is_(True),
+        ApiEndpoint.is_active == True,
     )
     if method:
         statement = statement.where(
             func.upper(ApiEndpoint.method) == method.strip().upper()
         )
-    identifier = _as_uuid(exclude_id)
+    identifier = _as_int(exclude_id)
     if identifier is not None:
         statement = statement.where(ApiEndpoint.id != identifier)
 
@@ -258,7 +264,7 @@ async def check_duplicate(
 
 
 async def toggle_endpoint(
-    db: AsyncSession, endpoint_id: str | UUID
+    db: AsyncSession, endpoint_id: int | str
 ) -> ApiEndpoint | None:
     """Flip ``is_active`` and return the endpoint (``None`` when missing)."""
     endpoint = await _fetch_by_id(db, endpoint_id)

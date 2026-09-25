@@ -6,7 +6,6 @@ commits its own writes so routers can serialize the returned ORM objects
 directly. Explicit ``*_flush`` helpers leave commit/rollback to their caller.
 """
 
-from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,14 +25,20 @@ __all__ = [
 ]
 
 
-def _as_uuid(value: str | UUID | None) -> UUID | None:
-    """Best-effort conversion of ``value`` to :class:`uuid.UUID`."""
-    if isinstance(value, UUID):
+def _as_int(value: object) -> int | None:
+    """Best-effort conversion of ``value`` to an integer id.
+
+    Both ``api_endpoint.id`` and ``api_endpoint_parameter_mapping.id`` are
+    ``INT`` auto-increment columns. The previous UUID coercion silently turned
+    every id into a miss: ``_fetch_by_id`` reported "not found" and the
+    endpoint/parameter list routes answered with an empty list.
+    """
+    if isinstance(value, int):
         return value
-    if value is None:
+    if value is None or value == "":
         return None
     try:
-        return UUID(str(value))
+        return int(str(value).strip())
     except (AttributeError, TypeError, ValueError):
         return None
 
@@ -55,10 +60,10 @@ def _parameter_values(data: ParameterCreate) -> dict:
 
 
 async def _fetch_by_id(
-    db: AsyncSession, parameter_id: str | UUID
+    db: AsyncSession, parameter_id: int | str
 ) -> ParameterMapping | None:
     """Plain single-row fetch; ``None`` for unknown (or invalid) ids."""
-    identifier = _as_uuid(parameter_id)
+    identifier = _as_int(parameter_id)
     if identifier is None:
         return None
     result = await db.execute(
@@ -68,10 +73,10 @@ async def _fetch_by_id(
 
 
 async def list_parameters(
-    db: AsyncSession, endpoint_id: str | UUID, active_only: bool = True
+    db: AsyncSession, endpoint_id: int | str, active_only: bool = True
 ) -> list[ParameterMapping]:
     """List the endpoint's parameter mappings (alphabetical by source field)."""
-    identifier = _as_uuid(endpoint_id)
+    identifier = _as_int(endpoint_id)
     if identifier is None:
         return []
 
@@ -81,18 +86,18 @@ async def list_parameters(
         .order_by(ParameterMapping.source_parameter.asc())
     )
     if active_only:
-        statement = statement.where(ParameterMapping.is_active.is_(True))
+        statement = statement.where(ParameterMapping.is_active == True)
 
     result = await db.execute(statement)
     return list(result.scalars().all())
 
 
 async def create_parameter_flush(
-    db: AsyncSession, endpoint_id: str | UUID, data: ParameterCreate
+    db: AsyncSession, endpoint_id: int | str, data: ParameterCreate
 ) -> ParameterMapping:
     """Stage and flush one mapping; caller owns commit/rollback."""
     parameter = ParameterMapping(
-        api_endpoint_id=_as_uuid(endpoint_id), **_parameter_values(data)
+        api_endpoint_id=_as_int(endpoint_id), **_parameter_values(data)
     )
     db.add(parameter)
     await db.flush()
@@ -100,7 +105,7 @@ async def create_parameter_flush(
 
 
 async def create_parameter(
-    db: AsyncSession, endpoint_id: str | UUID, data: ParameterCreate
+    db: AsyncSession, endpoint_id: int | str, data: ParameterCreate
 ) -> ParameterMapping:
     """Insert a single parameter mapping (caller ensures the endpoint exists)."""
     parameter = await create_parameter_flush(db, endpoint_id, data)
@@ -110,7 +115,7 @@ async def create_parameter(
 
 
 async def bulk_create_parameters_flush(
-    db: AsyncSession, endpoint_id: str | UUID, params: list[ParameterCreate]
+    db: AsyncSession, endpoint_id: int | str, params: list[ParameterCreate]
 ) -> list[ParameterMapping]:
     """Stage and flush a batch, without committing or refreshing its rows.
 
@@ -118,7 +123,7 @@ async def bulk_create_parameters_flush(
     any failure. Invalid endpoint IDs and empty batches retain the CRUD
     wrapper's empty-list behavior.
     """
-    identifier = _as_uuid(endpoint_id)
+    identifier = _as_int(endpoint_id)
     if identifier is None or not params:
         return []
 
@@ -132,7 +137,7 @@ async def bulk_create_parameters_flush(
 
 
 async def bulk_create_parameters(
-    db: AsyncSession, endpoint_id: str | UUID, params: list[ParameterCreate]
+    db: AsyncSession, endpoint_id: int | str, params: list[ParameterCreate]
 ) -> list[ParameterMapping]:
     """Insert every parameter in a single batch and return the persisted rows."""
     objects = await bulk_create_parameters_flush(db, endpoint_id, params)
@@ -145,7 +150,7 @@ async def bulk_create_parameters(
 
 
 async def update_parameter(
-    db: AsyncSession, param_id: str | UUID, data: dict
+    db: AsyncSession, param_id: int | str, data: dict
 ) -> ParameterMapping | None:
     """Apply a partial update; ``None`` when the row does not exist."""
     parameter = await _fetch_by_id(db, param_id)
@@ -160,7 +165,7 @@ async def update_parameter(
     return parameter
 
 
-async def delete_parameter(db: AsyncSession, param_id: str | UUID) -> bool:
+async def delete_parameter(db: AsyncSession, param_id: int | str) -> bool:
     """Hard-delete a single mapping; ``False`` when the row does not exist."""
     parameter = await _fetch_by_id(db, param_id)
     if parameter is None:
@@ -171,9 +176,9 @@ async def delete_parameter(db: AsyncSession, param_id: str | UUID) -> bool:
     return True
 
 
-async def delete_all_parameters(db: AsyncSession, endpoint_id: str | UUID) -> int:
+async def delete_all_parameters(db: AsyncSession, endpoint_id: int | str) -> int:
     """Hard-delete every mapping of an endpoint and return the row count."""
-    identifier = _as_uuid(endpoint_id)
+    identifier = _as_int(endpoint_id)
     if identifier is None:
         return 0
 

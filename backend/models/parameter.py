@@ -1,59 +1,70 @@
-"""``parameter_mappings`` — source -> target parameter transformations.
-
-One row per enabled mapping rule; rows are cascade-deleted when their
-endpoint is removed (``ON DELETE CASCADE`` on ``api_endpoint_id``).
-"""
-
-from datetime import datetime
 from typing import TYPE_CHECKING
-from uuid import UUID
 
-from sqlalchemy import (
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Index,
-    String,
-    Uuid,
-    func,
-    text,
-)
+from sqlalchemy import ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.base import Base
+from backend.models.types import YesNoBoolean
 
-if TYPE_CHECKING:  # pragma: no cover - import cycle guard for type checkers
+if TYPE_CHECKING:
     from backend.models.endpoint import ApiEndpoint
 
 
 class ParameterMapping(Base):
-    """One ``source_parameter -> target_parameter`` transformation rule."""
+    """One source_parameter -> target_parameter transformation rule."""
 
-    __tablename__ = "parameter_mappings"
+    __tablename__ = "api_endpoint_parameter_mapping"
+
     __table_args__ = (
-        # Mapping lookups: active rules per endpoint.
-        Index("idx_parameter_mappings_lookup", "api_endpoint_id", "is_active"),
+        Index(
+            "idx_parameter_mappings_lookup",
+            "api_endpoint_id",
+            "is_active",
+        ),
     )
 
-    id: Mapped[UUID] = mapped_column(
-        Uuid, primary_key=True, server_default=text("gen_random_uuid()")
+    id: Mapped[int] = mapped_column(
+        "id",
+        Integer,
+        primary_key=True,
+        autoincrement=True,
     )
-    api_endpoint_id: Mapped[UUID] = mapped_column(
-        ForeignKey("api_endpoints.id", ondelete="CASCADE"), nullable=False
+
+    api_endpoint_id: Mapped[int] = mapped_column(
+        "api_endpoint_id",
+        Integer,
+        ForeignKey("api_endpoint.id", ondelete="CASCADE"),
+        nullable=False,
     )
-    source_parameter: Mapped[str] = mapped_column(String(255), nullable=False)
-    target_parameter: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    source_parameter: Mapped[str] = mapped_column(
+        "source_parameter",
+        String(255),
+        nullable=False,
+    )
+
+    target_parameter: Mapped[str] = mapped_column(
+        "target_parameter",
+        String(255),
+        nullable=False,
+    )
+
     data_type: Mapped[str | None] = mapped_column(
-        String(20), server_default=text("'STRING'")
-    )
-    parameter_type: Mapped[str | None] = mapped_column(
-        String(20), server_default=text("'BODY'")
-    )
-    is_active: Mapped[bool | None] = mapped_column(
-        Boolean, server_default=text("true")
-    )
-    created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, server_default=func.now()
+        "data_type",
+        String(20),
     )
 
-    endpoint: Mapped["ApiEndpoint"] = relationship(back_populates="parameters")
+    parameter_type: Mapped[str | None] = mapped_column(
+        "parameter_type",
+        String(20),
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        "is_active",
+        YesNoBoolean(),
+        nullable=False,
+    )
+
+    endpoint: Mapped["ApiEndpoint"] = relationship(
+        back_populates="parameters",
+    )

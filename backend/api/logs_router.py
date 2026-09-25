@@ -11,7 +11,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_active_user, get_db
-from backend.models.user import User
+from backend.services.central_auth import CentralUser
+
+# Protected routes receive the centralized identity, not the local ORM user.
+User = CentralUser
 from backend.schemas.log import CallLogListResponse, CallLogResponse, CallLogSummary
 from backend.services import log_service
 
@@ -22,7 +25,7 @@ router = APIRouter(tags=["Call Logs"])
 
 @router.get("/call-logs", response_model=CallLogListResponse)
 async def list_call_logs(
-    endpoint_id: str | None = Query(default=None),
+    endpoint_id: int | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     date_from: str | None = Query(default=None),
     date_to: str | None = Query(default=None),
@@ -32,6 +35,7 @@ async def list_call_logs(
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(get_current_active_user),
 ) -> CallLogListResponse:
+
     total, items, page, per_page = await log_service.list_logs(
         db,
         endpoint_id=endpoint_id,
@@ -42,9 +46,11 @@ async def list_call_logs(
         page=page,
         per_page=per_page,
     )
+
     pages = (total + per_page - 1) // per_page if total else 0
+
     return CallLogListResponse(
-        items=[CallLogSummary.model_validate(row) for row in items],
+        items=items,
         total=total,
         page=page,
         per_page=per_page,
@@ -59,8 +65,11 @@ async def get_call_log(
     _current_user: User = Depends(get_current_active_user),
 ) -> CallLogResponse:
     row = await log_service.get_log(db, log_id)
+
     if row is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Call log not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Call log not found",
         )
-    return CallLogResponse.model_validate(row)
+
+    return row

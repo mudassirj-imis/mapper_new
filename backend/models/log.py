@@ -1,101 +1,102 @@
-"""``api_call_logs`` — full audit trail of proxied calls.
+"""Model for the ``api_call_log`` table.
 
-``endpoint_id`` becomes NULL (instead of deleting history) when an endpoint
-is removed (``ON DELETE SET NULL``). Every header/body column is JSONB and
-defaults to an empty object at the database level.
+Stores the audit trail for requests proxied through the API gateway.
+This model matches the existing MySQL ``api_call_log`` table.
 """
 
 from datetime import datetime
 from typing import Any
-from uuid import UUID
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
-    Uuid,
-    desc,
     func,
-    text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.db.base import Base
-
-# Shared server default for JSONB columns: an empty JSON object.
-_EMPTY_JSON = text("'{}'")
 
 
 class ApiCallLog(Base):
     """One proxied request/response pair recorded for auditing."""
 
-    __tablename__ = "api_call_logs"
+    __tablename__ = "api_call_log"
+
     __table_args__ = (
-        # Log listing: newest entries per endpoint.
-        Index("idx_api_call_logs_recent", "endpoint_id", desc("created_at")),
+        Index(
+            "idx_api_call_logs_recent",
+            "endpoint_id",
+            "created_at",
+        ),
     )
 
-    id: Mapped[UUID] = mapped_column(
-        Uuid, primary_key=True, server_default=text("gen_random_uuid()")
-    )
-    endpoint_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("api_endpoints.id", ondelete="SET NULL"), nullable=True
-    )
-    request_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
-    method: Mapped[str] = mapped_column(String(10), nullable=False)
-    path: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False)
-    overall_status: Mapped[bool | None] = mapped_column(
-        Boolean, server_default=text("false")
+    id: Mapped[int] = mapped_column(
+        "id",
+        Integer,
+        primary_key=True,
+        autoincrement=True,
     )
 
-    # --- Internal side (client -> gateway) ------------------------------------
-    internal_request_headers: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, server_default=_EMPTY_JSON
+    endpoint_id: Mapped[int | None] = mapped_column(
+        "endpoint_id",
+        Integer,
+        ForeignKey(
+            "api_endpoint.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
     )
-    internal_request_body: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, server_default=_EMPTY_JSON
-    )
-    internal_api_client_response: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, server_default=_EMPTY_JSON
-    )
-    internal_api_client_status: Mapped[str | None] = mapped_column(String(20))
 
-    # --- External side (gateway -> upstream) ------------------------------------
-    external_request_url: Mapped[str | None] = mapped_column(Text)
-    external_request_method: Mapped[str | None] = mapped_column(String(10))
-    external_request_headers: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, server_default=_EMPTY_JSON
+    source_request_payload: Mapped[dict[str, Any] | None] = mapped_column(
+        "source_request_payload",
+        JSON,
+        nullable=True,
     )
-    external_request_body: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, server_default=_EMPTY_JSON
-    )
-    external_query_params: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, server_default=_EMPTY_JSON
-    )
-    external_response: Mapped[Any] = mapped_column(JSONB, nullable=True)
-    external_response_headers: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, server_default=_EMPTY_JSON
-    )
-    external_response_time_ms: Mapped[int | None] = mapped_column(
-        Integer, server_default=text("0")
-    )
-    external_status_code: Mapped[int | None] = mapped_column(Integer)
 
-    # --- Timing / diagnostics ------------------------------------------------------
-    total_time_ms: Mapped[int | None] = mapped_column(
-        Integer, server_default=text("0")
+    source_response: Mapped[dict[str, Any] | None] = mapped_column(
+        "source_response",
+        JSON,
+        nullable=True,
     )
-    full_log: Mapped[str | None] = mapped_column(Text)
-    timeout_configured: Mapped[int | None] = mapped_column(
-        Integer, server_default=text("60")
+
+    target_request_payload: Mapped[dict[str, Any] | None] = mapped_column(
+        "target_request_payload",
+        JSON,
+        nullable=True,
     )
-    tenant_id: Mapped[str | None] = mapped_column(String(255))
+
+    target_response: Mapped[dict[str, Any] | None] = mapped_column(
+        "target_response",
+        JSON,
+        nullable=True,
+    )
+
+    status: Mapped[str | None] = mapped_column(
+        "status",
+        String(20),
+        nullable=True,
+    )
+
+    response_time_ms: Mapped[int | None] = mapped_column(
+        "response_time_ms",
+        Integer,
+        nullable=True,
+    )
+
+    error_message: Mapped[str | None] = mapped_column(
+        "error_message",
+        Text,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime | None] = mapped_column(
-        DateTime, server_default=func.now()
+        "created_at",
+        DateTime,
+        server_default=func.now(),
+        nullable=True,
     )

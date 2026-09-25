@@ -22,17 +22,6 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_recycle=300,
     echo=False,
-    connect_args={
-        # Supabase's pooler (PgBouncer, transaction mode, port 6543) reuses
-        # server connections across client connections. SQLAlchemy's asyncpg
-        # dialect otherwise asks asyncpg for *named* statements
-        # (``__asyncpg_stmt_N__``), which collide on reuse and raise
-        # asyncpg.exceptions.DuplicatePreparedStatementError. Disable both
-        # caches AND request unnamed statements so nothing is named server-side.
-        "statement_cache_size": 0,              # asyncpg's own statement cache
-        "prepared_statement_cache_size": 0,     # SQLAlchemy's prepared stmt cache
-        "prepared_statement_name_func": lambda: "",  # "" -> unnamed statement
-    },
 )
 
 AsyncSessionLocal = async_sessionmaker(

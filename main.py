@@ -60,6 +60,11 @@ def create_app() -> FastAPI:
         title="API Mapper & Gateway",
         version="1.0.0",
         lifespan=lifespan,
+        # Makes Swagger UI / ReDoc emit prefix-aware links. The proxy serves the
+        # /mapper-new prefix, so the generated spec and OAuth2-redirect URLs
+        # must carry it too — otherwise the docs page loads but then fetches
+        # the origin root's spec, which belongs to a different service.
+        root_path=settings.APP_ROOT_PATH,
     )
 
     app.add_middleware(

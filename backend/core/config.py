@@ -80,6 +80,40 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["*"]
     API_TIMEOUT_SECONDS: int = 60
 
+    # --- Public mount point ----------------------------------------------------
+    # Path this service is served under, e.g. ``/mapper-new``. Only used to
+    # generate absolute URLs (Swagger UI's spec + OAuth2 redirect links); the
+    # reverse proxy is what actually serves the prefix, so leave this empty
+    # when the app is mounted at the domain root.
+    #
+    #   APP_ROOT_PATH=/mapper-new
+    APP_ROOT_PATH: str = ""
+
+    @field_validator("APP_ROOT_PATH", mode="before")
+    @classmethod
+    def _normalize_root_path(cls, value: Any) -> str:
+        """Normalise to ``""`` or a leading-slash, no-trailing-slash prefix.
+
+        FastAPI concatenates this straight onto ``/openapi.json`` and
+        ``/docs/oauth2-redirect``, so ``mapper-new/`` or ``/mapper-new/`` would
+        both produce a broken URL.
+        """
+        if value is None:
+            return ""
+        text = str(value).strip()
+        if not text or text == "/":
+            return ""
+        return "/" + text.strip("/")
+
+    # --- Centralized authentication -----------------------------------------
+    # Base URL of the centralized SSPA/IMIS auth service.  The service is
+    # mounted at /auth; its login route is /auth/auth1/login.
+    # AUTH_SERVICE_URL=https://api.imis.com.pk:9001/auth
+    AUTH_SERVICE_URL: str | None = None
+    # Explicit central-service AES key.  This stays server-side; never expose
+    # it as a VITE_* frontend variable.
+    AUTH_SERVICE_ENCRYPTION_KEY: str | None = None
+
     # --- Upstream authentication (shared .env login for protected targets) -------
     # When all three are set, the gateway lazily exchanges these credentials for a
     # bearer token by POSTing to UPSTREAM_AUTH_URL, then injects the token into

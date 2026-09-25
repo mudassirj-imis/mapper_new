@@ -95,7 +95,8 @@ class EndpointResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
+    id: int
+
     endpoint_code: str | None = None
     source_api_url: str
     target_api_url: str
@@ -112,7 +113,6 @@ class EndpointResponse(BaseModel):
     tenant_id: str | None = None
     rate_limit_rpm: int | None = None
 
-    # --- SFTP delivery mode -------------------------------------------------
     sftp_host: str | None = None
     sftp_port: int | None = None
     sftp_username: str | None = None
@@ -121,12 +121,10 @@ class EndpointResponse(BaseModel):
     sftp_remote_path: str | None = None
     dynamic_filename_pattern: str | None = None
 
-    # --- Upstream authentication ---------------------------------------------
     api_id: str | None = None
     api_password: str | None = None
     api_auth_url: str | None = None
 
-    # --- Bookkeeping -------------------------------------------------------------
     created_by: int | None = None
     updated_by: int | None = None
     created_at: datetime | None = None
@@ -163,7 +161,7 @@ class CompleteMappingResponse(BaseModel):
     """Result of persisting a complete mapping."""
 
     success: bool
-    apiEndpointId: UUID | str
+    apiEndpointId: int
     endpointCode: str
     message: str
     parameterCount: int

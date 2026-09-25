@@ -39,7 +39,7 @@ class Webhook(Base):
         Uuid, primary_key=True, server_default=text("gen_random_uuid()")
     )
     endpoint_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("api_endpoints.id", ondelete="CASCADE"), nullable=True
+        ForeignKey("api_endpoint.id", ondelete="CASCADE"), nullable=True
     )
     url: Mapped[str] = mapped_column(Text, nullable=False)
     events: Mapped[list[str]] = mapped_column(JSONB, nullable=False)

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 from typing import Any, Literal
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 from sqlalchemy import func, select
@@ -61,23 +61,19 @@ def _thaw(value: Any) -> Any:
 
 @dataclass(frozen=True, slots=True)
 class EndpointSnapshot:
-    """Detached gateway configuration; no credentials or ORM relationships.
+    """Detached gateway configuration."""
 
-    ``mock_response`` returns a fresh JSON-compatible copy on each access.
-    Capture authenticated user fields before resolution: ending the read
-    transaction expires ORM objects in the caller's read-only session.
-    """
-
-    id: UUID
+    id: int
     endpoint_code: str | None
     source_api_url: str
     target_api_url: str
     method: str | None
     is_active: bool | None
-    tenant_id: str | None
-    rate_limit_rpm: int | None
-    mock_enabled: bool | None
-    updated_at: datetime | None
+    tenant_id: str | None = None
+    rate_limit_rpm: int | None = None
+    mock_enabled: bool = False
+    updated_at: datetime | None = None
+
     _mock_response: Any = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -132,20 +128,40 @@ class ExecutionOutcome:
         return _thaw(self.result)
 
 
+#: Columns the config-only endpoint lookup selects. Deliberately minimal:
+#: :func:`_endpoint_snapshot` reads only these, so the gateway never pulls the
+#: encrypted credential columns (``api_password`` / ``sftp_password``) into
+#: memory just to make a routing decision.
 _ENDPOINT_COLUMNS = (
-    "id", "endpoint_code", "source_api_url", "target_api_url", "method",
-    "is_active", "tenant_id", "rate_limit_rpm", "mock_enabled", "updated_at",
-    "mock_response",
+    "id",
+    "endpoint_code",
+    "source_api_url",
+    "target_api_url",
+    "method",
+    "is_active",
+    "updated_at",
 )
 
 
-def _endpoint_snapshot(row: Mapping[str, Any] | None) -> EndpointSnapshot | None:
+def _endpoint_snapshot(row):
     if row is None:
         return None
-    values = dict(row)
-    values["_mock_response"] = values.pop("mock_response")
-    return EndpointSnapshot(**values)
 
+    values = dict(row)
+
+    return EndpointSnapshot(
+        id=int(values["id"]),
+        endpoint_code=values.get("endpoint_code"),
+        source_api_url=values.get("source_api_url") or "",
+        target_api_url=values.get("target_api_url") or "",
+        method=values.get("method"),
+        is_active=values.get("is_active"),
+        tenant_id=None,
+        rate_limit_rpm=None,
+        mock_enabled=False,
+        updated_at=values.get("updated_at"),
+        _mock_response=None,
+    )
 
 def _http_failure(status: int) -> FailureKind:
     if status in (408, 504):
@@ -163,9 +179,81 @@ _DEFAULT_CONTENT_TYPE = "application/json"
 _CONNECT_TIMEOUT_SECONDS = 10.0
 
 
+def _as_int(value: object) -> int | None:
+    """Best-effort conversion of ``value`` to the integer endpoint id.
+
+    ``api_endpoint.id`` is an ``INT`` auto-increment column, so an explicit id
+    from the tester arrives as an integer (or a numeric string). The previous
+    UUID coercion made every explicit-id lookup miss and silently fell through
+    to URL matching, hiding the real mapping behind a path coincidence.
+    """
+    if isinstance(value, int):
+        return value
+    if value is None or value == "":
+        return None
+    try:
+        return int(str(value).strip())
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def _elapsed_ms(started: float) -> int:
     """Milliseconds elapsed since ``started`` (a ``perf_counter`` mark)."""
     return int((time.perf_counter() - started) * 1000)
+
+
+#: Message returned for endpoints whose stored URL is not callable over HTTP.
+_LOG_ONLY_MESSAGE = "Log-only endpoint, no external call made"
+
+
+def _log_only_result(
+    *,
+    request_id: str,
+    endpoint_id: int,
+    tenant_id: str | None,
+    method: str,
+    url: str,
+    headers: dict[str, Any] | None,
+    timeout: int,
+) -> dict[str, Any]:
+    """Result envelope for a log-only endpoint (scheme-less ``source_api_url``).
+
+    Some registered endpoints carry a bare path (``/v1/audio/play``) because
+    they exist purely to record an inbound call, not to proxy it. The legacy
+    engine skipped the external call for those and still reported success, so
+    an operator can exercise the mapping and inspect what was mapped.
+
+    This mirrors ``mock_service.build_mock_result`` so the router, response
+    viewer and call-log writer keep working without special casing.
+    """
+    return {
+        "request_id": request_id,
+        "endpoint_id": endpoint_id,
+        "tenant_id": tenant_id,
+        "method": method,
+        "path": url,
+        "request_headers": dict(headers or {}),
+        "success": True,
+        "data": {"message": _LOG_ONLY_MESSAGE},
+        "status_code": 200,
+        "response_time_ms": 0,
+        "response_headers": {"Content-Type": "application/json"},
+        "error": None,
+        "failure_kind": None,
+        "upstream_attempted": False,
+        "source": "policy",
+        "external_request_url": None,
+        "external_request_method": None,
+        "external_request_headers": None,
+        "external_request_body": None,
+        "external_query_params": None,
+        "external_response_headers": None,
+        "external_status_code": None,
+        "external_response_time_ms": None,
+        "total_time_ms": 0,
+        "status": CallStatusEnum.SUCCESS.value,
+        "timeout_configured": timeout,
+    }
 
 
 class GatewayEngine:
@@ -192,7 +280,7 @@ class GatewayEngine:
 
     async def process_request(
         self,
-        endpoint_id: str | UUID | None,
+        endpoint_id: int | str | None,
         request_data: dict[str, Any] | None,
         headers: dict[str, Any] | None = None,
         target_url: str | None = None,
@@ -322,6 +410,30 @@ class GatewayEngine:
                 result["total_time_ms"] = _elapsed_ms(started)
                 return ExecutionOutcome(result, failure_kind="configuration")
 
+            if not upstream_url.lower().startswith(("http://", "https://")):
+                # No scheme means there is no host to call. Treat the endpoint
+                # as log-only (as the legacy engine did) instead of letting
+                # httpx fail the call with an unsupported-protocol 502.
+                result.update(
+                    _log_only_result(
+                        request_id=result["request_id"],
+                        endpoint_id=endpoint.id,
+                        tenant_id=endpoint.tenant_id,
+                        method=method,
+                        url=url,
+                        headers=headers,
+                        timeout=self.timeout,
+                    )
+                )
+                logger.info(
+                    "Gateway call %s: endpoint %s source URL %r has no scheme "
+                    "— log-only, no upstream call",
+                    result["request_id"],
+                    endpoint.id,
+                    upstream_url,
+                )
+                return ExecutionOutcome(result, None, "policy", False)
+
             logger.info(
                 "Gateway call %s: %s %s -> %s %s (body=%d header=%d query=%d)",
                 result["request_id"],
@@ -376,7 +488,7 @@ class GatewayEngine:
 
     async def resolve_endpoint(
         self,
-        endpoint_id: str | UUID | None,
+        endpoint_id: int | str | None,
         target_url: str | None = None,
         target_method: str | None = None,
     ) -> EndpointSnapshot | None:
@@ -410,7 +522,7 @@ class GatewayEngine:
     # ------------------------------------------------------------------
 
     async def _resolve_endpoint(
-        self, endpoint_id: str | UUID | None, target_url: str, target_method: str
+        self, endpoint_id: int | str | None, target_url: str, target_method: str
     ) -> EndpointSnapshot | None:
         """Explicit id first; fall back to matching the target URL + method.
 
@@ -418,19 +530,15 @@ class GatewayEngine:
         console may test a deactivated mapping on purpose); URL matching only
         considers active endpoints, like production routing should.
         """
-        if endpoint_id is not None:
-            try:
-                identifier = UUID(str(endpoint_id))
-            except (ValueError, TypeError, AttributeError):
-                identifier = None
-            if identifier is not None:
-                result = await self.db.execute(
-                    select(*(getattr(ApiEndpoint, name) for name in _ENDPOINT_COLUMNS))
-                    .where(ApiEndpoint.id == identifier)
-                )
-                endpoint = _endpoint_snapshot(result.mappings().first())
-                if endpoint is not None:
-                    return endpoint
+        identifier = _as_int(endpoint_id)
+        if identifier is not None:
+            result = await self.db.execute(
+                select(*(getattr(ApiEndpoint, name) for name in _ENDPOINT_COLUMNS))
+                .where(ApiEndpoint.id == identifier)
+            )
+            endpoint = _endpoint_snapshot(result.mappings().first())
+            if endpoint is not None:
+                return endpoint
 
         if not target_url:
             return None
@@ -441,7 +549,7 @@ class GatewayEngine:
     ) -> EndpointSnapshot | None:
         """Active endpoint whose ``target_api_url`` ends with ``target_url``."""
         statement = select(*(getattr(ApiEndpoint, name) for name in _ENDPOINT_COLUMNS)).where(
-            ApiEndpoint.is_active.is_(True),
+            ApiEndpoint.is_active == True,
             # ``endswith`` semantics keep short paths ("/v1/orders") matching
             # against fully-qualified stored URLs.
             ApiEndpoint.target_api_url.like(f"%{target_url}"),
@@ -477,7 +585,7 @@ class GatewayEngine:
         """Active endpoints on the same method, for error hints."""
         statement = select(
             ApiEndpoint.id, ApiEndpoint.endpoint_code, ApiEndpoint.target_api_url
-        ).where(ApiEndpoint.is_active.is_(True))
+        ).where(ApiEndpoint.is_active == True)
         if target_method:
             statement = statement.where(
                 func.upper(ApiEndpoint.method) == target_method

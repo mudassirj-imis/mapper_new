@@ -1,7 +1,6 @@
 """Gateway (proxy) execution schemas for the map-and-call test endpoint."""
 
 from typing import Any
-from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -9,15 +8,15 @@ from pydantic import BaseModel
 class MapAndCallRequest(BaseModel):
     """Test-run request: apply an endpoint's mappings and call the upstream.
 
-    ``endpointId`` accepts either a UUID string (as sent by the frontend) or
-    a native :class:`~uuid.UUID` when invoked internally.
+    ``endpointId`` is the ``api_endpoint.id`` integer (as sent by the frontend),
+    accepted as an ``int`` or a numeric string.
     """
 
     targetUrl: str
     targetMethod: str
     requestData: dict[str, Any]
     headers: dict[str, Any] | None = None
-    endpointId: UUID | str
+    endpointId: int | str
 
 
 class MapAndCallResponse(BaseModel):

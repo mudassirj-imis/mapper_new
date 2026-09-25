@@ -1,29 +1,38 @@
-"""Shared FastAPI dependencies: DB session, current user, role guards.
+"""Shared FastAPI dependencies for the centralized authentication service.
 
-``oauth2_scheme`` drives Swagger's Authorize button; the actual token is
-issued by ``POST /api/auth/login`` (JSON credentials, not OAuth2 form data),
-so the ``tokenUrl`` below is informational only.
+The mapper is a backend-for-frontend for the SSPA/IMIS auth service.  It does
+not mint or validate its own JWTs: incoming bearer tokens are validated by
+calling the central ``/auth/auth1/permissions`` endpoint, and the resulting
+identity is passed to the existing application routes.
 """
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.db.session import get_db
-from backend.models.user import User
-from backend.services.auth_service import decode_token
+from backend.services.central_auth import (
+    CentralAuthError,
+    CentralAuthRejected,
+    CentralAuthUnavailable,
+    CentralUser,
+    validate_access_token,
+)
+from backend.services.http_client import get_http_client
 
 __all__ = [
+    "bearer_scheme",
     "get_db",
     "get_current_active_user",
     "get_current_user",
-    "oauth2_scheme",
     "require_roles",
 ]
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+# auto_error=False lets this module return a consistent 401 response for both
+# missing and invalid credentials.
+bearer_scheme = HTTPBearer(
+    auto_error=False,
+    description="Centralized SSPA/IMIS access token",
+)
 
 _CREDENTIALS_ERROR = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -33,39 +42,37 @@ _CREDENTIALS_ERROR = HTTPException(
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    """Resolve the JWT bearer token to an active ``User`` row.
-
-    Roles are eagerly loaded (``selectinload``) so downstream dependencies
-    and endpoints can read ``user.roles`` without triggering lazy I/O
-    outside the async session context.
-    """
-    payload = decode_token(token)
-    user_id = payload.get("user_id")
-    if user_id is None:
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    http_client=Depends(get_http_client),
+) -> CentralUser:
+    """Validate the central access token and return its current identity."""
+    if credentials is None or not credentials.credentials:
         raise _CREDENTIALS_ERROR
 
-    result = await db.execute(
-        select(User).options(selectinload(User.roles)).where(User.id == user_id)
-    )
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise _CREDENTIALS_ERROR
-    if not user.is_active:
+    try:
+        return await validate_access_token(http_client, credentials.credentials)
+    except CentralAuthRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Inactive user",
+            detail=exc.message or "Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
+        ) from exc
+    except CentralAuthUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=exc.message,
+        ) from exc
+    except CentralAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=exc.message,
+        ) from exc
 
 
 async def get_current_active_user(
-    current_user: User = Depends(get_current_user),
-) -> User:
-    """Defence-in-depth wrapper: reject accounts deactivated after issuance."""
+    current_user: CentralUser = Depends(get_current_user),
+) -> CentralUser:
+    """Reject a central identity that is no longer active."""
     if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user"
@@ -74,13 +81,11 @@ async def get_current_active_user(
 
 
 def require_roles(*roles: str):
-    """Dependency factory gating an endpoint on at least one required role."""
-
+    """Dependency factory gating an endpoint on central role names."""
     async def _require_roles(
-        current_user: User = Depends(get_current_active_user),
-    ) -> User:
-        granted = {role.role_name for role in current_user.roles}
-        if not granted.intersection(roles):
+        current_user: CentralUser = Depends(get_current_active_user),
+    ) -> CentralUser:
+        if not set(current_user.roles).intersection(roles):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",

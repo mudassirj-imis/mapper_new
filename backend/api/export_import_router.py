@@ -13,7 +13,10 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_active_user, get_db
-from backend.models.user import User
+from backend.services.central_auth import CentralUser
+
+# Protected routes receive the centralized identity, not the local ORM user.
+User = CentralUser
 from backend.services import export_import_service
 
 __all__ = ["router"]

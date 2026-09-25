@@ -1,17 +1,23 @@
-import api from './api';
+import api, { REFRESH_TOKEN_KEY } from './api';
 
 /**
- * Authentication service — talks to the backend auth API.
- *
- * Backend contract (expected):
- *   POST /api/auth/login    { email, password } -> { success, token, email? }
- *   POST /api/auth/validate (Bearer token)      -> { success, email? }
- *   POST /api/auth/logout   (Bearer token)      -> { success }
+ * Authentication service — the mapper backend is the BFF for the
+ * centralized SSPA/IMIS auth service. Credentials are sent only to the mapper;
+ * encryption and central token exchange happen on the server.
  */
-
 export const login = async (email, password) => {
-  const response = await api.post('/auth/login', { email, password });
-  return response.data;
+  try {
+    const response = await api.post('/auth/login', { email, password });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      error?.response?.data?.message ||
+        error?.response?.data?.detail ||
+        error?.message ||
+        'Invalid email or password',
+      { cause: error }
+    );
+  }
 };
 
 export const validateToken = async () => {
@@ -19,9 +25,24 @@ export const validateToken = async () => {
   return response.data;
 };
 
+export const refresh = async (refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)) => {
+  try {
+    const response = await api.post('/auth/refresh', { refresh_token: refreshToken });
+    return response.data;
+  } catch (error) {
+    throw new Error(
+      error?.response?.data?.message ||
+        error?.response?.data?.detail ||
+        error?.message ||
+        'Token refresh failed',
+      { cause: error }
+    );
+  }
+};
+
 export const logout = async () => {
   const response = await api.post('/auth/logout');
   return response.data;
 };
 
-export default { login, validateToken, logout };
+export default { login, refresh, validateToken, logout };

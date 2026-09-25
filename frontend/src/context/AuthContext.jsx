@@ -2,13 +2,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { Navigate, useLocation } from 'react-router-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
 import authService from '../services/authService';
-import { TOKEN_KEY, EMAIL_KEY } from '../services/api';
+import {
+  TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
+  TOKEN_EXPIRES_AT_KEY,
+  EMAIL_KEY,
+} from '../services/api';
 
 const AuthContext = createContext(null);
 
-/**
- * Full-screen loader shown while an existing session token is validated.
- */
 function SessionLoader() {
   return (
     <Box
@@ -36,9 +38,23 @@ export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const applySession = useCallback((nextToken, nextEmail) => {
+  const applySession = useCallback((nextToken, nextEmail, nextRefreshToken, expiresIn) => {
+    const refreshToken = nextRefreshToken === undefined
+      ? localStorage.getItem(REFRESH_TOKEN_KEY)
+      : nextRefreshToken;
+    const expiry = expiresIn === undefined
+      ? localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
+      : expiresIn;
+
     if (nextToken) localStorage.setItem(TOKEN_KEY, nextToken);
+    else localStorage.removeItem(TOKEN_KEY);
     if (nextEmail) localStorage.setItem(EMAIL_KEY, nextEmail);
+    else localStorage.removeItem(EMAIL_KEY);
+    if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    else localStorage.removeItem(REFRESH_TOKEN_KEY);
+    if (expiry) localStorage.setItem(TOKEN_EXPIRES_AT_KEY, expiry);
+    else localStorage.removeItem(TOKEN_EXPIRES_AT_KEY);
+
     setToken(nextToken || null);
     setUser(nextEmail || null);
     setIsAuthenticated(Boolean(nextToken));
@@ -46,19 +62,37 @@ export function AuthProvider({ children }) {
 
   const clearSession = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(TOKEN_EXPIRES_AT_KEY);
     localStorage.removeItem(EMAIL_KEY);
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
   }, []);
 
-  /**
-   * Validate the token currently stored in localStorage.
-   * Returns true when the session is (still) valid.
-   */
   const validateToken = useCallback(async () => {
-    const stored = localStorage.getItem(TOKEN_KEY);
-    if (!stored) {
+    let currentToken = localStorage.getItem(TOKEN_KEY);
+    const storedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+
+    if (!currentToken && storedRefreshToken) {
+      try {
+        const refreshed = await authService.refresh(storedRefreshToken);
+        if (refreshed?.success && refreshed.token) {
+          currentToken = refreshed.token;
+          applySession(
+            refreshed.token,
+            localStorage.getItem(EMAIL_KEY),
+            refreshed.refresh_token ?? storedRefreshToken,
+            refreshed.expires_in
+              ? String(Date.now() + Number(refreshed.expires_in) * 1000)
+              : undefined
+          );
+        }
+      } catch {
+        currentToken = null;
+      }
+    }
+    if (!currentToken) {
       setIsAuthenticated(false);
       return false;
     }
@@ -67,7 +101,7 @@ export function AuthProvider({ children }) {
       const data = await authService.validateToken();
       if (data?.success) {
         const email = data.email || data.user?.email || localStorage.getItem(EMAIL_KEY);
-        applySession(stored, email);
+        applySession(localStorage.getItem(TOKEN_KEY) || currentToken, email);
         return true;
       }
       clearSession();
@@ -78,15 +112,12 @@ export function AuthProvider({ children }) {
     }
   }, [applySession, clearSession]);
 
-  // On mount: try to validate any existing token.
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       await validateToken();
       if (!cancelled) setLoading(false);
     })();
-
     return () => {
       cancelled = true;
     };
@@ -98,7 +129,14 @@ export function AuthProvider({ children }) {
       if (!data?.success || !data.token) {
         throw new Error(data?.detail || data?.message || 'Invalid email or password');
       }
-      applySession(data.token, data.email || data.user?.email || email);
+      applySession(
+        data.token,
+        data.email || data.user?.email || email,
+        data.refresh_token ?? null,
+        data.expires_in
+          ? String(Date.now() + Number(data.expires_in) * 1000)
+          : null
+      );
       return data;
     },
     [applySession]
@@ -114,15 +152,7 @@ export function AuthProvider({ children }) {
   }, [clearSession]);
 
   const value = useMemo(
-    () => ({
-      user,
-      token,
-      isAuthenticated,
-      loading,
-      login,
-      logout,
-      validateToken,
-    }),
+    () => ({ user, token, isAuthenticated, loading, login, logout, validateToken }),
     [user, token, isAuthenticated, loading, login, logout, validateToken]
   );
 
@@ -131,28 +161,18 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 }
 
-/**
- * Route guard — redirects unauthenticated visitors to /login while the
- * initial token check is running it shows a full-screen loader.
- */
 export function AuthGuard({ children }) {
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) {
-    return <SessionLoader />;
-  }
-
+  if (loading) return <SessionLoader />;
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-
   return children;
 }
 

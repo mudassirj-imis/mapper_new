@@ -10,17 +10,25 @@ signature-based duplicate detection and full parameter replacement on update.
 """
 
 from datetime import datetime
-from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    status,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
 import httpx
 
 from backend.api.deps import get_current_active_user, get_db
 from backend.models import ParamTypeEnum, ParameterMapping, WebhookEvent
-from backend.models.user import User
+from backend.services.central_auth import CentralUser
+
+# Protected routes receive the centralized identity, not the local ORM user.
+User = CentralUser
 from backend.schemas.common import SuccessResponse
 from backend.schemas.endpoint import (
     CompleteMappingRequest,
@@ -48,7 +56,7 @@ _PARAM_TYPE_VALUES = {member.value for member in ParamTypeEnum}
 
 
 def _resolve_param_type(item: MappingItem) -> str:
-    """Destination of one mapping row (``BODY``/``HEADER``/``QUERY``).
+    """Destination of one mapping row (BODY/HEADER/QUERY).
 
     The wire format carries the value twice (``parameterTypeValue`` mirrors
     ``parameterType``); whichever field the client actually sent wins, and
@@ -61,23 +69,32 @@ def _resolve_param_type(item: MappingItem) -> str:
         item.parameterType,
         item.parameterTypeValue,
     ]
+
     for candidate in candidates:
         normalized = (candidate or "").strip().upper()
         if normalized in _PARAM_TYPE_VALUES:
             return normalized
+
     return ParamTypeEnum.BODY.value
 
 
 def _enabled_rows(mappings: list[MappingItem]) -> list[MappingItem]:
     """Rows carrying an enabled, complete source -> target pair."""
-    return [m for m in mappings if m.enabled and m.sourceField and m.targetField]
+    return [
+        m
+        for m in mappings
+        if m.enabled and m.sourceField and m.targetField
+    ]
 
 
 def _request_signature(mappings: list[MappingItem]) -> str:
     """Order-insensitive signature of the enabled mapping rows."""
     return "|".join(
         f"{m.sourceField}->{m.targetField}:{_resolve_param_type(m)}"
-        for m in sorted(_enabled_rows(mappings), key=lambda m: m.sourceField)
+        for m in sorted(
+            _enabled_rows(mappings),
+            key=lambda m: m.sourceField,
+        )
     )
 
 
@@ -86,11 +103,16 @@ def _stored_signature(parameters: list[ParameterMapping]) -> str:
     return "|".join(
         f"{p.source_parameter}->{p.target_parameter}:"
         f"{p.parameter_type or ParamTypeEnum.BODY.value}"
-        for p in sorted(parameters, key=lambda p: p.source_parameter)
+        for p in sorted(
+            parameters,
+            key=lambda p: p.source_parameter,
+        )
     )
 
 
-def _build_parameters(mappings: list[MappingItem]) -> list[ParameterCreate]:
+def _build_parameters(
+    mappings: list[MappingItem],
+) -> list[ParameterCreate]:
     """Convert the enabled mapping rows into ``ParameterCreate`` payloads."""
     return [
         ParameterCreate(
@@ -103,28 +125,41 @@ def _build_parameters(mappings: list[MappingItem]) -> list[ParameterCreate]:
 
 
 def _generate_description(
-    source: dict | None, target: dict | None, mappings: list[MappingItem]
+    source: dict | None,
+    target: dict | None,
+    mappings: list[MappingItem],
 ) -> str:
     """Compose the auto-description stored alongside the endpoint."""
     parts: list[str] = []
+
     if source and source.get("name"):
         parts.append(f"Source: {source['name']}")
+
     if target and target.get("name"):
         parts.append(f"Target: {target['name']}")
+
     parts.append(f"Mapped: {len(_enabled_rows(mappings))} fields")
-    parts.append(f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    parts.append(
+        f"Created: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
     return " | ".join(parts)
 
 
 def _normalize_method(value: str) -> str:
-    """Upper-case the HTTP verb sent by the editor (blank ⇒ ``POST``)."""
+    """Upper-case the HTTP verb sent by the editor (blank => ``POST``)."""
     normalized = (value or "").strip().upper()
     return normalized or "POST"
 
 
-def _not_found(detail: str = "Endpoint not found") -> HTTPException:
+def _not_found(
+    detail: str = "Endpoint not found",
+) -> HTTPException:
     """Uniform 404 for missing endpoints/mappings."""
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=detail,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -132,13 +167,18 @@ def _not_found(detail: str = "Endpoint not found") -> HTTPException:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/api-endpoints", response_model=list[EndpointResponse])
+@router.get(
+    "/api-endpoints",
+    response_model=list[EndpointResponse],
+)
 async def list_api_endpoints(
     search: str | None = Query(
-        default=None, description="Substring match on code / source / target URL."
+        default=None,
+        description="Substring match on code / source / target URL.",
     ),
     is_active: bool | None = Query(
-        default=None, description="Filter on the enablement flag."
+        default=None,
+        description="Filter on the enablement flag.",
     ),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
@@ -147,20 +187,29 @@ async def list_api_endpoints(
 ) -> list[EndpointResponse]:
     """List registered endpoints, newest first (parameters included)."""
     return await endpoint_service.list_endpoints(
-        db, skip=skip, limit=limit, search=search, is_active=is_active
+        db,
+        skip=skip,
+        limit=limit,
+        search=search,
+        is_active=is_active,
     )
 
 
-@router.get("/api-endpoints/{endpoint_id}", response_model=EndpointResponse)
+@router.get(
+    "/api-endpoints/{endpoint_id}",
+    response_model=EndpointResponse,
+)
 async def get_api_endpoint(
-    endpoint_id: UUID,
+    endpoint_id: int,
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(get_current_active_user),
 ) -> EndpointResponse:
     """Fetch a single endpoint with its parameter mappings."""
     endpoint = await endpoint_service.get_endpoint(db, endpoint_id)
+
     if endpoint is None:
         raise _not_found()
+
     return endpoint
 
 
@@ -176,8 +225,10 @@ async def create_api_endpoint(
 ) -> EndpointResponse:
     """Register a new endpoint (credentials are encrypted before storage)."""
     data = payload.model_dump()
+
     if data.get("created_by") is None:
         data["created_by"] = current_user.id
+
     try:
         endpoint = await endpoint_service.create_endpoint(db, data)
     except IntegrityError as exc:
@@ -185,39 +236,56 @@ async def create_api_endpoint(
             status_code=status.HTTP_409_CONFLICT,
             detail="An endpoint with this endpoint_code already exists",
         ) from exc
+
     return endpoint
 
 
-@router.put("/api-endpoints/{endpoint_id}", response_model=EndpointResponse)
-@router.patch("/api-endpoints/{endpoint_id}", response_model=EndpointResponse)
+@router.put(
+    "/api-endpoints/{endpoint_id}",
+    response_model=EndpointResponse,
+)
+@router.patch(
+    "/api-endpoints/{endpoint_id}",
+    response_model=EndpointResponse,
+)
 async def update_api_endpoint(
-    endpoint_id: UUID,
+    endpoint_id: int,
     payload: EndpointUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> EndpointResponse:
-    """Partially update an endpoint; ``PUT`` and ``PATCH`` share this handler.
+    """Partially update an endpoint; PUT and PATCH share this handler.
 
     Only the fields present in the payload are touched. ``sftp_password`` and
     ``api_password`` are re-encrypted; an empty string clears the credential.
     """
     data = payload.model_dump(exclude_unset=True)
     data["updated_by"] = current_user.id
+
     try:
-        endpoint = await endpoint_service.update_endpoint(db, endpoint_id, data)
+        endpoint = await endpoint_service.update_endpoint(
+            db,
+            endpoint_id,
+            data,
+        )
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An endpoint with this endpoint_code already exists",
         ) from exc
+
     if endpoint is None:
         raise _not_found()
+
     return endpoint
 
 
-@router.delete("/api-endpoints/{endpoint_id}", response_model=SuccessResponse)
+@router.delete(
+    "/api-endpoints/{endpoint_id}",
+    response_model=SuccessResponse,
+)
 async def delete_api_endpoint(
-    endpoint_id: UUID,
+    endpoint_id: int,
     hard: bool = Query(
         default=False,
         description="Permanently remove the row instead of deactivating it.",
@@ -225,10 +293,16 @@ async def delete_api_endpoint(
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(get_current_active_user),
 ) -> SuccessResponse:
-    """Soft-delete an endpoint (``hard=true`` removes it permanently)."""
-    removed = await endpoint_service.delete_endpoint(db, endpoint_id, hard=hard)
+    """Soft-delete an endpoint (hard=true removes it permanently)."""
+    removed = await endpoint_service.delete_endpoint(
+        db,
+        endpoint_id,
+        hard=hard,
+    )
+
     if not removed:
         raise _not_found()
+
     return SuccessResponse(
         success=True,
         message=(
@@ -239,16 +313,21 @@ async def delete_api_endpoint(
     )
 
 
-@router.put("/api-endpoints/{endpoint_id}/toggle", response_model=EndpointResponse)
+@router.put(
+    "/api-endpoints/{endpoint_id}/toggle",
+    response_model=EndpointResponse,
+)
 async def toggle_api_endpoint(
-    endpoint_id: UUID,
+    endpoint_id: int,
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(get_current_active_user),
 ) -> EndpointResponse:
     """Flip the endpoint's active flag and return the updated row."""
     endpoint = await endpoint_service.toggle_endpoint(db, endpoint_id)
+
     if endpoint is None:
         raise _not_found()
+
     return endpoint
 
 
@@ -257,7 +336,10 @@ async def toggle_api_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/mappings/complete", response_model=CompleteMappingResponse)
+@router.post(
+    "/mappings/complete",
+    response_model=CompleteMappingResponse,
+)
 async def save_complete_mapping(
     payload: CompleteMappingRequest,
     background_tasks: BackgroundTasks,
@@ -267,19 +349,30 @@ async def save_complete_mapping(
 ) -> CompleteMappingResponse:
     """Persist a completed field mapping sent by the mapping editor.
 
-    * the identical mapping is already stored → warning result, nothing written;
-    * the same route exists with different fields → endpoint refreshed and
+    * the identical mapping is already stored -> warning result, nothing written;
+    * the same route exists with different fields -> endpoint refreshed and
       parameters replaced;
-    * otherwise → a new endpoint plus its parameters are created.
+    * otherwise -> a new endpoint plus its parameters are created.
     """
     method = _normalize_method(payload.targetMethod)
+
     existing = await endpoint_service.check_duplicate(
-        db, payload.sourceUrl, payload.targetUrl, method
+        db,
+        payload.sourceUrl,
+        payload.targetUrl,
+        method,
     )
 
     if existing is not None:
-        stored = await parameter_service.list_parameters(db, existing.id)
-        if _request_signature(payload.mappings) == _stored_signature(stored):
+        stored = await parameter_service.list_parameters(
+            db,
+            existing.id,
+        )
+
+        if (
+            _request_signature(payload.mappings)
+            == _stored_signature(stored)
+        ):
             return CompleteMappingResponse(
                 success=True,
                 warning=True,
@@ -301,7 +394,9 @@ async def save_complete_mapping(
                 "target_api_url": payload.targetUrl,
                 "method": method,
                 "description": _generate_description(
-                    payload.source, payload.target, payload.mappings
+                    payload.source,
+                    payload.target,
+                    payload.mappings,
                 ),
                 "api_id": payload.api_id,
                 "api_password": payload.api_password,
@@ -309,10 +404,17 @@ async def save_complete_mapping(
                 "updated_by": current_user.id,
             },
         )
-        if endpoint is None:  # defensive: row vanished between check and update
+
+        if endpoint is None:
             raise _not_found()
-        await parameter_service.delete_all_parameters(db, existing.id)
+
+        await parameter_service.delete_all_parameters(
+            db,
+            existing.id,
+        )
+
         message = "API mapping updated (parameters changed)"
+
     else:
         endpoint = await endpoint_service.create_endpoint(
             db,
@@ -321,7 +423,9 @@ async def save_complete_mapping(
                 "target_api_url": payload.targetUrl,
                 "method": method,
                 "description": _generate_description(
-                    payload.source, payload.target, payload.mappings
+                    payload.source,
+                    payload.target,
+                    payload.mappings,
                 ),
                 "api_id": payload.api_id,
                 "api_password": payload.api_password,
@@ -329,7 +433,9 @@ async def save_complete_mapping(
                 "created_by": current_user.id,
             },
         )
+
         message = "New API mapping created"
+
         background_tasks.add_task(
             fire_event,
             db,
@@ -345,8 +451,11 @@ async def save_complete_mapping(
         )
 
     created = await parameter_service.bulk_create_parameters(
-        db, endpoint.id, _build_parameters(payload.mappings)
+        db,
+        endpoint.id,
+        _build_parameters(payload.mappings),
     )
+
     return CompleteMappingResponse(
         success=True,
         apiEndpointId=endpoint.id,
@@ -357,10 +466,11 @@ async def save_complete_mapping(
 
 
 @router.put(
-    "/mappings/complete/{endpoint_id}", response_model=CompleteMappingResponse
+    "/mappings/complete/{endpoint_id}",
+    response_model=CompleteMappingResponse,
 )
 async def update_complete_mapping(
-    endpoint_id: UUID,
+    endpoint_id: int,
     payload: CompleteMappingRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -371,18 +481,33 @@ async def update_complete_mapping(
     route and field signature; otherwise the endpoint is updated in place and
     every parameter row is re-created from the payload.
     """
-    existing = await endpoint_service.get_endpoint(db, endpoint_id)
+    existing = await endpoint_service.get_endpoint(
+        db,
+        endpoint_id,
+    )
+
     if existing is None:
         raise _not_found("Mapping not found")
 
     method = _normalize_method(payload.targetMethod)
+
     duplicate = await endpoint_service.check_duplicate(
-        db, payload.sourceUrl, payload.targetUrl, method, exclude_id=endpoint_id
+        db,
+        payload.sourceUrl,
+        payload.targetUrl,
+        method,
+        exclude_id=endpoint_id,
     )
+
     if duplicate is not None:
-        duplicate_params = await parameter_service.list_parameters(db, duplicate.id)
-        if _request_signature(payload.mappings) == _stored_signature(
-            duplicate_params
+        duplicate_params = await parameter_service.list_parameters(
+            db,
+            duplicate.id,
+        )
+
+        if (
+            _request_signature(payload.mappings)
+            == _stored_signature(duplicate_params)
         ):
             return CompleteMappingResponse(
                 success=True,
@@ -405,7 +530,9 @@ async def update_complete_mapping(
             "target_api_url": payload.targetUrl,
             "method": method,
             "description": _generate_description(
-                payload.source, payload.target, payload.mappings
+                payload.source,
+                payload.target,
+                payload.mappings,
             ),
             "api_id": payload.api_id,
             "api_password": payload.api_password,
@@ -413,13 +540,21 @@ async def update_complete_mapping(
             "updated_by": current_user.id,
         },
     )
-    if updated is None:  # defensive: row vanished between fetch and update
+
+    if updated is None:
         raise _not_found("Mapping not found")
 
-    await parameter_service.delete_all_parameters(db, endpoint_id)
-    created = await parameter_service.bulk_create_parameters(
-        db, endpoint_id, _build_parameters(payload.mappings)
+    await parameter_service.delete_all_parameters(
+        db,
+        endpoint_id,
     )
+
+    created = await parameter_service.bulk_create_parameters(
+        db,
+        endpoint_id,
+        _build_parameters(payload.mappings),
+    )
+
     return CompleteMappingResponse(
         success=True,
         apiEndpointId=endpoint_id,

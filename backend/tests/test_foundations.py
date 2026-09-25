@@ -20,7 +20,8 @@ with patch.dict(os.environ, {
     "ENCRYPTION_KEY": "foundation-test-only",
 }, clear=True), patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}):
     from backend.core.config import Settings
-    from backend.models import Webhook, WebhookEvent
+    from backend.models import ApiEndpoint, ParameterMapping, User, Webhook, WebhookEvent
+    from backend.models.types import YesNoBoolean
     from backend.schemas.endpoint import EndpointCreate, EndpointUpdate
     from backend.schemas.gateway import MapAndCallResponse
     from backend.schemas.parameter import ParameterCreate
@@ -31,7 +32,10 @@ with patch.dict(os.environ, {
     )
 
 
-ENDPOINT_ID = UUID("11111111-1111-4111-8111-111111111111")
+#: ``api_endpoint.id`` is an INT auto-increment column (MySQL ``api_endpoint``).
+ENDPOINT_ID = 290
+#: ``webhooks.id`` is a UUID column (that table is still UUID-keyed).
+WEBHOOK_ID = UUID("22222222-2222-4222-8222-222222222222")
 LEGACY_KEYS = set("""
     request_id endpoint_id tenant_id method path request_headers success data
     status_code response_time_ms total_time_ms response_headers error
@@ -101,6 +105,37 @@ def make_client(status=200, data=None, error=None):
     return client
 
 
+class YesNoBooleanTests(unittest.TestCase):
+    def test_legacy_mysql_flags_map_both_ways(self):
+        column_type = YesNoBoolean()
+
+        self.assertEqual(column_type.process_bind_param(True, None), "Y")
+        self.assertEqual(column_type.process_bind_param(False, None), "N")
+        self.assertEqual(column_type.process_bind_param("yes", None), "Y")
+        self.assertEqual(column_type.process_bind_param("no", None), "N")
+        self.assertIsNone(column_type.process_bind_param(None, None))
+        self.assertIs(column_type.process_result_value("Y", None), True)
+        self.assertIs(column_type.process_result_value("N", None), False)
+        self.assertIsNone(column_type.process_result_value(None, None))
+
+        with self.assertRaises(ValueError):
+            column_type.process_bind_param("unknown", None)
+        with self.assertRaises(ValueError):
+            column_type.process_result_value("unknown", None)
+
+    def test_legacy_flag_columns_use_boolean_mapping(self):
+        for column in (
+            ApiEndpoint.require_authentication,
+            ApiEndpoint.require_correlation_id,
+            ApiEndpoint.is_active,
+            ApiEndpoint.is_hidden,
+            ParameterMapping.is_active,
+            User.is_active,
+        ):
+            with self.subTest(column=column.key):
+                self.assertIsInstance(column.type, YesNoBoolean)
+
+
 class ResolutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_config_only_explicit_inactive_id_has_one_query(self):
         row = endpoint_row(mock_enabled=True)
@@ -110,7 +145,10 @@ class ResolutionTests(unittest.IsolatedAsyncioTestCase):
             resolved = await GatewayEngine(db, client).resolve_endpoint(str(ENDPOINT_ID))
         self.assertEqual(resolved.id, ENDPOINT_ID)
         self.assertFalse(resolved.is_active)
-        self.assertTrue(resolved.mock_enabled)
+        # The MySQL ``api_endpoint`` table has no ``mock_enabled`` /
+        # ``mock_response`` columns, so the config-only snapshot (which selects
+        # only ``_ENDPOINT_COLUMNS``) always reports the mock path as disabled.
+        self.assertFalse(resolved.mock_enabled)
         mappings.assert_not_awaited()
         client.send.assert_not_awaited()
         self.assertEqual(db.execute.await_count, 1)
@@ -120,9 +158,10 @@ class ResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("parameter_mappings", str(statement))
         self.assertFalse(db.in_transaction())
         db.rollback.assert_awaited_once()
-        row["mock_response"]["items"].append("changed")
-        resolved.mock_response["items"].append("also changed")
-        self.assertEqual(resolved.mock_response, {"items": [False, 0]})
+        # The MySQL ``api_endpoint`` table has no ``mock_response`` column, so a
+        # config-only snapshot carries no mock payload. It is still a detached,
+        # frozen config object.
+        self.assertIsNone(resolved.mock_response)
         with self.assertRaises(FrozenInstanceError):
             resolved.rate_limit_rpm = 0
 
@@ -134,7 +173,7 @@ class ResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(endpoint.id, ENDPOINT_ID)
         self.assertEqual(db.execute.await_count, 2)
         statement = db.execute.call_args.args[0]
-        self.assertIn("is_active IS true", str(statement))
+        self.assertIn("is_active = :is_active_1", str(statement))
         self.assertIn("created_at DESC", str(statement))
         self.assertIn("%/v1/items", statement.compile().params.values())
         self.assertIn("POST", statement.compile().params.values())
@@ -177,7 +216,7 @@ class ResolutionTests(unittest.IsolatedAsyncioTestCase):
         row.source_parameter = "changed"
         self.assertEqual(mappings, (MappingSnapshot("up", "down", "BODY", "STRING"),))
         self.assertEqual(db.execute.await_count, 1)
-        self.assertIn("is_active IS true", str(db.execute.call_args.args[0]))
+        self.assertIn("is_active = :is_active_1", str(db.execute.call_args.args[0]))
         self.assertFalse(db.in_transaction())
 
 
@@ -465,7 +504,7 @@ class SchemaAndConfigTests(unittest.TestCase):
                          {"endpoint_id": None, "enabled": False})
         now = datetime.now(timezone.utc)
         response = WebhookResponse.model_validate(SimpleNamespace(
-            id=ENDPOINT_ID, endpoint_id=None, url=created.url, events=created.events,
+            id=WEBHOOK_ID, endpoint_id=None, url=created.url, events=created.events,
             enabled=True, created_by=7, created_at=now, updated_at=now,
         ))
         self.assertEqual(response.created_by, 7)

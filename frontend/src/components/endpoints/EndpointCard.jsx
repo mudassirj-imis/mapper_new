@@ -251,6 +251,11 @@ export default function EndpointCard({ endpoint, onEdit, onDelete, onToggle }) {
         anchorEl={menuAnchor}
         open={menuOpen}
         onClose={closeMenu}
+        /* The Menu is portalled to document.body, so its clicks land outside the
+           card's DOM subtree and never reach the card's own onClick — but the
+           React event still bubbles through this component tree, which would
+           fire the card's navigate-to-editor handler. Stop it at the menu. */
+        onClick={(event) => event.stopPropagation()}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{ paper: { sx: { minWidth: 190, borderRadius: 2 } } }}

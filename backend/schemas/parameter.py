@@ -1,7 +1,6 @@
 """Parameter mapping request/response schemas."""
 
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,8 +22,10 @@ class ParameterResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
-    api_endpoint_id: UUID
+    # ``api_endpoint_parameter_mapping`` uses INT auto-increment keys (see
+    # ``ParameterMapping``); declaring these as UUID rejected every real row.
+    id: int
+    api_endpoint_id: int
     source_parameter: str
     target_parameter: str
     data_type: str | None = None

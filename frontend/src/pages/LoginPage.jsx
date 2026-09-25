@@ -24,8 +24,6 @@ import {
 import { alpha, useTheme } from '@mui/material/styles';
 import { useAuth } from '../context/AuthContext';
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 const containerVariants = {
   hidden: {},
   visible: {
@@ -108,11 +106,7 @@ export default function LoginPage() {
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      setError('Email is required.');
-      return;
-    }
-    if (!EMAIL_REGEX.test(trimmedEmail)) {
-      setError('Enter a valid email address.');
+      setError('Email or username is required.');
       return;
     }
     if (!password) {
@@ -248,9 +242,9 @@ export default function LoginPage() {
               <TextField
                 fullWidth
                 autoFocus
-                type="email"
-                label="Email"
-                autoComplete="email"
+                type="text"
+                label="Email or username"
+                autoComplete="username"
                 value={email}
                 onChange={(event) => {
                   setEmail(event.target.value);
