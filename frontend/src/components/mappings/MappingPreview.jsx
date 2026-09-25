@@ -145,7 +145,7 @@ export default function MappingPreview({
 						left: 0,
 						right: 0,
 						height: 3,
-						background: "linear-gradient(90deg, #1976d2 0%, #9c27b0 100%)",
+						background: "linear-gradient(90deg, #1e8d39 0%, #4ecb6d 100%)",
 					},
 				}}
 			>

@@ -107,7 +107,7 @@ const LogoMark = styled(Box)(({ theme }) => ({
 	alignItems: "center",
 	justifyContent: "center",
 	flexShrink: 0,
-	background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+	background: "linear-gradient(135deg, #1e8d39 0%, #4ecb6d 100%)",
 	boxShadow: `0 6px 16px ${alpha(theme.palette.primary.main, 0.35)}`,
 }));
 
@@ -133,7 +133,7 @@ const NavItem = styled(ListItemButton, {
 		width: 3,
 		height: active ? 20 : 0,
 		borderRadius: "0 4px 4px 0",
-		background: `linear-gradient(180deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+		background: "linear-gradient(180deg, #1e8d39, #4ecb6d)",
 		transition: "height 0.18s ease",
 	},
 	"&:hover": {
@@ -166,7 +166,7 @@ const brandAvatarSx = {
 	fontSize: "0.85rem",
 	fontWeight: 700,
 	color: "#ffffff",
-	background: "linear-gradient(135deg, #1976d2 0%, #9c27b0 100%)",
+	background: "linear-gradient(135deg, #1e8d39 0%, #4ecb6d 100%)",
 };
 
 export default function Sidebar({ mobileOpen, onMobileClose }) {

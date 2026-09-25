@@ -18,8 +18,8 @@ const ThemeContext = createContext(null);
 const THEME_STORAGE_KEY = "theme-mode";
 
 const BRAND = {
-	blue: "#1976d2",
-	violet: "#9c27b0",
+	blue: "#1e8d39",
+	violet: "#4ecb6d",
 };
 
 const getDesignTokens = (mode) => {

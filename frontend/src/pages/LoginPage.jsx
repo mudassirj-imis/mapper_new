@@ -212,8 +212,7 @@ export default function LoginPage() {
 									display: "flex",
 									alignItems: "center",
 									justifyContent: "center",
-									background:
-										"linear-gradient(135deg, #1976d2 0%, #9c27b0 100%)",
+									background: "linear-gradient(90deg, #1e8d39 0%, #4ecb6d 100%)",
 									boxShadow: `0 10px 24px ${alpha("#1976d2", 0.35)}`,
 								}}
 							>

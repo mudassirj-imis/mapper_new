@@ -128,7 +128,7 @@ export default function EndpointCard({ endpoint, onEdit, onDelete, onToggle }) {
 					bottom: 0,
 					left: 0,
 					width: 3,
-					background: "linear-gradient(180deg, #1976d2 0%, #9c27b0 100%)",
+					background: "linear-gradient(180deg, #1e8d39 0%, #4ecb6d 100%)",
 					opacity: isActive ? 0.5 : 0.15,
 					transition: "opacity 0.18s ease",
 				},

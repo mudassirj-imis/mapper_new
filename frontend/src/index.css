@@ -1,17 +1,17 @@
-/* ============================================================
-   API Mapper — base styles
-   Design language: "precision console"
-   Type: IBM Plex Sans (UI) + IBM Plex Mono (labels / code)
-   ============================================================ */
-
 :root {
-	--font-sans: "IBM Plex Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-	--font-mono:
-		"IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-sans: "IBM Plex Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 
-	--brand-blue: #1976d2;
-	--brand-violet: #9c27b0;
-	--brand-gradient: linear-gradient(135deg, #1976d2 0%, #9c27b0 100%);
+  --font-mono:
+    "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --brand-green-dark: #1e8d39;
+  --brand-green-light: #4ecb6d;
+
+  --brand-gradient: linear-gradient(
+    90deg,
+    #1e8d39 0%,
+    #4ecb6d 100%
+  );
 }
 
 * {
