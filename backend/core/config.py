@@ -88,8 +88,8 @@ class Settings(BaseSettings):
             return ""
         return "/" + text.strip("/")
 
-    AUTH_SERVICE_URL: str | None = None
-
+    #AUTH_SERVICE_URL: str | None = None
+    AUTH_BASE_URL: str 
     AUTH_SERVICE_ENCRYPTION_KEY: str | None = None
 
     UPSTREAM_AUTH_URL: str | None = None

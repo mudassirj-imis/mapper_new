@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 _NONCE_SIZE = 12
 _TAG_SIZE = 16
-_DEFAULT_AUTH_BASE_URL = "https://api.imis.com.pk:9001/auth"
+
 
 __all__ = [
     "CentralAuthError",
@@ -182,11 +182,7 @@ def decrypt_auth_json(blob: str) -> dict[str, Any]:
 
 def _base_url() -> str:
     """Return the central service base URL, including the ``/auth`` mount."""
-    raw = (
-        settings.AUTH_SERVICE_URL
-        or settings.UPSTREAM_AUTH_URL
-        or _DEFAULT_AUTH_BASE_URL
-    )
+    raw = settings.AUTH_BASE_URL
     parsed = urlparse(raw if "://" in raw else f"https://{raw}")
     path = parsed.path.rstrip("/")
     for suffix in ("/openapi.json", "/auth1/login"):

@@ -15,11 +15,6 @@ export const login = async (email, password) => {
 	}
 };
 
-export const validateToken = async () => {
-	const response = await api.post("/auth/validate");
-	return response.data;
-};
-
 export const refresh = async (
 	refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY),
 ) => {
@@ -44,4 +39,4 @@ export const logout = async () => {
 	return response.data;
 };
 
-export default { login, refresh, validateToken, logout };
+export default { login, refresh, logout };

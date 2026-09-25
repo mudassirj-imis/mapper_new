@@ -82,15 +82,28 @@ export function AuthProvider({ children }) {
 		setIsAuthenticated(false);
 	}, []);
 
-	const validateToken = useCallback(async () => {
-		let currentToken = localStorage.getItem(TOKEN_KEY);
-		const storedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+	useEffect(() => {
+		let cancelled = false;
 
-		if (!currentToken && storedRefreshToken) {
+		const restoreSession = async () => {
+			const currentToken = localStorage.getItem(TOKEN_KEY);
+			if (currentToken) {
+				setIsAuthenticated(true);
+				setLoading(false);
+				return;
+			}
+
+			const storedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+			if (!storedRefreshToken) {
+				setLoading(false);
+				return;
+			}
+
 			try {
 				const refreshed = await authService.refresh(storedRefreshToken);
+				if (cancelled) return;
+
 				if (refreshed?.success && refreshed.token) {
-					currentToken = refreshed.token;
 					applySession(
 						refreshed.token,
 						localStorage.getItem(EMAIL_KEY),
@@ -99,42 +112,21 @@ export function AuthProvider({ children }) {
 							? String(Date.now() + Number(refreshed.expires_in) * 1000)
 							: undefined,
 					);
+				} else {
+					clearSession();
 				}
 			} catch {
-				currentToken = null;
+				if (!cancelled) clearSession();
+			} finally {
+				if (!cancelled) setLoading(false);
 			}
-		}
-		if (!currentToken) {
-			setIsAuthenticated(false);
-			return false;
-		}
+		};
 
-		try {
-			const data = await authService.validateToken();
-			if (data?.success) {
-				const email =
-					data.email || data.user?.email || localStorage.getItem(EMAIL_KEY);
-				applySession(localStorage.getItem(TOKEN_KEY) || currentToken, email);
-				return true;
-			}
-			clearSession();
-			return false;
-		} catch {
-			clearSession();
-			return false;
-		}
-	}, [applySession, clearSession]);
-
-	useEffect(() => {
-		let cancelled = false;
-		(async () => {
-			await validateToken();
-			if (!cancelled) setLoading(false);
-		})();
+		restoreSession();
 		return () => {
 			cancelled = true;
 		};
-	}, [validateToken]);
+	}, [applySession, clearSession]);
 
 	const login = useCallback(
 		async (email, password) => {
@@ -172,9 +164,8 @@ export function AuthProvider({ children }) {
 			loading,
 			login,
 			logout,
-			validateToken,
 		}),
-		[user, token, isAuthenticated, loading, login, logout, validateToken],
+		[user, token, isAuthenticated, loading, login, logout],
 	);
 
 	return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

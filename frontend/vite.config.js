@@ -1,66 +1,95 @@
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 
-// https://vite.dev/config/
-export default defineConfig({
-	base: "/mapper-new-ui/",
-	plugins: [react()],
-	server: {
-		port: 3005,
-		host: true,
-		proxy: {
-			"/api": {
-				target: "https://api.imis.com.pk:9001/mapper-new",
-				changeOrigin: true,
-				secure: false,
-				configure: (proxy) => {
-					proxy.on("error", (err) => {
-						console.log("[proxy] error", err.message);
-					});
-				},
-			},
-		},
-	},
-	preview: {
-		port: 3005,
-		host: true,
-	},
-	build: {
-		rollupOptions: {
-			output: {
-				manualChunks: (id) => {
-					if (
-						id.includes("node_modules/react/") ||
-						id.includes("node_modules/react-dom/") ||
-						id.includes("node_modules/react-router") ||
-						id.includes("node_modules/scheduler/")
-					) {
-						return "vendor-react";
-					}
-					if (id.includes("node_modules/@mui/material/")) {
-						return "vendor-mui-core";
-					}
-					if (id.includes("node_modules/@mui/icons-material/")) {
-						return "vendor-mui-icons";
-					}
-					if (
-						id.includes("node_modules/@mui/system/") ||
-						id.includes("node_modules/@mui/styled-engine") ||
-						id.includes("node_modules/@mui/utils/")
-					) {
-						return "vendor-mui-system";
-					}
-					if (id.includes("node_modules/@emotion/")) {
-						return "vendor-emotion";
-					}
-					if (id.includes("node_modules/")) {
-						if (!id.includes("@mui/") && !id.includes("react")) {
-							return "vendor-others";
-						}
-					}
-				},
-			},
-		},
-		chunkSizeWarningLimit: 600,
-	},
+export default defineConfig(({ mode }) => {
+    // Load .env, .env.development, .env.production, etc.
+    const env = loadEnv(mode, process.cwd(), "");
+
+    return {
+        base: env.VITE_BASE_URL,
+
+        plugins: [react()],
+
+        server: {
+            port: Number(env.VITE_PORT),
+            host: env.VITE_HOST,
+
+            allowedHosts: env.VITE_ALLOWED_HOSTS
+                ? env.VITE_ALLOWED_HOSTS.split(",").map((host) => host.trim())
+                : [],
+
+            proxy: {
+                "/api": {
+                    target:
+                        env.VITE_API_URL,
+
+                    changeOrigin: true,
+                    secure: false,
+
+                    configure: (proxy) => {
+                        proxy.on("error", (err) => {
+                            console.log("[proxy] error", err.message);
+                        });
+                    },
+                },
+            },
+        },
+
+        preview: {
+            port: Number(env.VITE_PREVIEW_PORT || env.VITE_PORT || 3005),
+            host: env.VITE_HOST || true,
+
+            allowedHosts: env.VITE_ALLOWED_HOSTS
+                ? env.VITE_ALLOWED_HOSTS.split(",").map((host) => host.trim())
+                : [],
+        },
+
+        build: {
+            rollupOptions: {
+                output: {
+                    manualChunks: (id) => {
+                        if (
+                            id.includes("node_modules/react/") ||
+                            id.includes("node_modules/react-dom/") ||
+                            id.includes("node_modules/react-router") ||
+                            id.includes("node_modules/scheduler/")
+                        ) {
+                            return "vendor-react";
+                        }
+
+                        if (id.includes("node_modules/@mui/material/")) {
+                            return "vendor-mui-core";
+                        }
+
+                        if (id.includes("node_modules/@mui/icons-material/")) {
+                            return "vendor-mui-icons";
+                        }
+
+                        if (
+                            id.includes("node_modules/@mui/system/") ||
+                            id.includes("node_modules/@mui/styled-engine") ||
+                            id.includes("node_modules/@mui/utils/")
+                        ) {
+                            return "vendor-mui-system";
+                        }
+
+                        if (id.includes("node_modules/@emotion/")) {
+                            return "vendor-emotion";
+                        }
+
+                        if (id.includes("node_modules/")) {
+                            if (
+                                !id.includes("@mui/") &&
+                                !id.includes("react")
+                            ) {
+                                return "vendor-others";
+                            }
+                        }
+                    },
+                },
+            },
+
+            chunkSizeWarningLimit: 600,
+        },
+    };
 });

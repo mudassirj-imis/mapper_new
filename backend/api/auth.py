@@ -10,13 +10,12 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials
 import httpx
 
-from backend.api.deps import bearer_scheme, get_current_user
+from backend.api.deps import bearer_scheme
 from backend.schemas.auth import (
     LoginRequest,
     LoginResponse,
     RefreshRequest,
     RefreshResponse,
-    UserResponse,
 )
 from backend.services.central_auth import (
     CentralAuthError,
@@ -106,20 +105,6 @@ async def refresh(
     )
 
 
-@router.post("/validate")
-async def validate_token(current_user=Depends(get_current_user)) -> dict:
-    """Confirm the central token is valid and return its identity."""
-    return {
-        "success": True,
-        "valid": True,
-        "user_id": current_user.id,
-        "email": current_user.email,
-        "user_name": current_user.user_name,
-        "roles": current_user.roles,
-        "is_super_admin": current_user.is_super_admin,
-    }
-
-
 @router.post("/logout")
 async def logout(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
@@ -129,17 +114,3 @@ async def logout(
     if credentials is not None and credentials.credentials:
         await central_logout(http_client, credentials.credentials)
     return {"success": True, "message": "Logged out successfully"}
-
-
-@router.get("/me", response_model=UserResponse)
-async def read_current_user(
-    current_user=Depends(get_current_user),
-) -> UserResponse:
-    """Return the current centralized user profile."""
-    return UserResponse(
-        id=current_user.id,
-        user_name=current_user.user_name,
-        email=current_user.email,
-        is_active=current_user.is_active,
-        roles=current_user.roles,
-    )
