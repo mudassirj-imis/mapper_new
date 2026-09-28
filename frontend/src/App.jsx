@@ -21,6 +21,7 @@ const CreateMappingPage = lazy(() => import("./pages/CreateMappingPage"));
 const EditMappingPage = lazy(() => import("./pages/EditMappingPage"));
 const GatewayPage = lazy(() => import("./pages/GatewayPage"));
 const LogsPage = lazy(() => import("./pages/LogsPage"));
+const CronJobsPage = lazy(() => import("./pages/CronJobsPage"));
 const SftpPage = lazy(() => import("./pages/SftpPage"));
 const ExportImportPage = lazy(() => import("./pages/ExportImportPage"));
 
@@ -120,6 +121,7 @@ export default function App() {
 							<Route path="/edit-mapping/:id" element={<EditMappingPage />} />
 							<Route path="/gateway" element={<GatewayPage />} />
 							<Route path="/logs" element={<LogsPage />} />
+							<Route path="/scheduled-jobs" element={<CronJobsPage />} />
 							<Route path="/sftp" element={<SftpPage />} />
 							<Route path="/export-import" element={<ExportImportPage />} />
 						</Route>

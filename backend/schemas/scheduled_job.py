@@ -1,0 +1,212 @@
+"""Pydantic contracts for recurring HTTP requests."""
+from __future__ import annotations
+
+import re
+from datetime import datetime, timezone
+from typing import Annotated
+from uuid import uuid4
+
+from pydantic import (
+    AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter,
+    field_validator, model_validator,
+)
+
+from backend.core.config import settings
+
+_HTTP_URL = TypeAdapter(HttpUrl)
+_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+#: Methods for which a request body is meaningful.
+_METHODS_WITH_BODY = {"POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+
+#: RFC 9110 ``token`` characters, the only ones legal in a header name.
+_HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+#: Headers httpx owns, or that would defeat the pinned-destination guarantee.
+_FORBIDDEN_HEADERS = frozenset(
+    {
+        "connection",
+        "content-length",
+        "expect",
+        "host",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }
+)
+
+
+def _validate_url(value: str) -> str:
+    parsed = _HTTP_URL.validate_python(value)
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Scheduled job URL must not contain credentials")
+    if parsed.fragment:
+        raise ValueError("Scheduled job URL must not contain a fragment")
+    return str(parsed)
+
+
+def _validate_headers(value: object) -> dict[str, str] | None:
+    """Normalise request headers, rejecting malformed or scheduler-owned pairs."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("headers must be an object of header names to values")
+    if len(value) > settings.SCHEDULER_MAX_HEADERS:
+        raise ValueError(
+            f"at most {settings.SCHEDULER_MAX_HEADERS} headers are allowed"
+        )
+    normalized: dict[str, str] = {}
+    for raw_name, raw_value in value.items():
+        name = str(raw_name).strip()
+        if not name:
+            raise ValueError("header names must not be empty")
+        if not _HEADER_NAME.match(name):
+            raise ValueError(f"'{name}' is not a valid header name")
+        if name.lower() in _FORBIDDEN_HEADERS:
+            raise ValueError(f"the '{name}' header is managed by the scheduler")
+        if isinstance(raw_value, bool) or not isinstance(raw_value, (str, int, float)):
+            raise ValueError(f"header '{name}' must have a text value")
+        text = str(raw_value).strip()
+        if any(char in text for char in ("\n", "\r", "\x00")):
+            raise ValueError(f"header '{name}' contains illegal control characters")
+        normalized[name] = text
+    return normalized or None
+
+
+def _validate_body(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("body must be a string")
+    if len(value.encode("utf-8")) > settings.SCHEDULER_MAX_REQUEST_BODY_BYTES:
+        raise ValueError(
+            "body exceeds the "
+            f"{settings.SCHEDULER_MAX_REQUEST_BODY_BYTES} byte scheduler limit"
+        )
+    return value or None
+
+
+ScheduledJobUrl = Annotated[str, Field(max_length=2083), AfterValidator(_validate_url)]
+ScheduledJobHeaders = Annotated[dict[str, str] | None, AfterValidator(_validate_headers)]
+ScheduledJobBody = Annotated[str | None, AfterValidator(_validate_body)]
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Attach UTC to the naive datetimes SQLite hands back.
+
+    The scheduler stores every timestamp with ``datetime.now(timezone.utc)``,
+    but SQLite has no timezone type so the value comes back naive. Serialised
+    as-is it would be read by the browser as *local* time and render hours off.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+UtcDateTime = Annotated[datetime, AfterValidator(_as_utc)]
+
+
+class ScheduledJobCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str = Field(
+        default_factory=lambda: uuid4().hex,
+        min_length=1,
+        max_length=255,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+    )
+    name: str | None = Field(default=None, max_length=255)
+    url: ScheduledJobUrl
+    method: str = Field(default="GET", min_length=1, max_length=16)
+    headers: ScheduledJobHeaders = None
+    body: ScheduledJobBody = None
+    cron: str | None = Field(default=None, max_length=255)
+    interval_seconds: int | None = Field(default=None, gt=0)
+
+    @field_validator("method", mode="before")
+    @classmethod
+    def normalize_method(cls, value: object) -> str:
+        method = str(value or "GET").strip().upper()
+        if method not in _METHODS:
+            raise ValueError("Unsupported HTTP method")
+        return method
+
+    @field_validator("cron", mode="before")
+    @classmethod
+    def normalize_cron(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return str(value).strip() or None
+
+    @model_validator(mode="after")
+    def validate_schedule(self) -> "ScheduledJobCreate":
+        if (self.cron is None) == (self.interval_seconds is None):
+            raise ValueError("provide exactly one of cron or interval_seconds")
+        if self.body and self.method not in _METHODS_WITH_BODY:
+            raise ValueError(f"{self.method} requests cannot carry a body")
+        return self
+
+
+class ScheduledJobToggle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+
+
+class ScheduledJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    job_id: str
+    name: str | None
+    url: str
+    method: str
+    headers: dict[str, str] | None = None
+    body: str | None = None
+    cron: str | None
+    interval_seconds: int | None
+    enabled: bool
+    created_by: int | None
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
+    next_run_time: UtcDateTime | None = None
+    last_run_at: UtcDateTime | None = None
+    last_success: bool | None = None
+
+
+class ScheduledJobRunSummary(BaseModel):
+    """History row without the captured payload, used by the list endpoints."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    job_id: str
+    url: str
+    method: str
+    status_code: int | None
+    success: bool
+    duration_ms: int
+    error: str | None
+    ran_at: UtcDateTime
+    response_size: int | None = None
+    has_response_body: bool = False
+
+
+class ScheduledJobRunResponse(ScheduledJobRunSummary):
+    """Full run detail: both header sets plus the captured response body."""
+
+    request_headers: dict[str, str] | None = None
+    response_headers: dict[str, str] | None = None
+    response_body: str | None = None
+    response_body_truncated: bool = False
+
+
+__all__ = [
+    "ScheduledJobBody",
+    "ScheduledJobCreate",
+    "ScheduledJobHeaders",
+    "ScheduledJobResponse",
+    "ScheduledJobRunResponse",
+    "ScheduledJobRunSummary",
+    "ScheduledJobToggle",
+]

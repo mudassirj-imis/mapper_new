@@ -11,7 +11,7 @@ import platform
 import time
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_db
@@ -30,7 +30,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> dict:
     """Liveness plus a database connectivity probe."""
     db_connected = True
     try:
-        await db.execute(text("SELECT 1"))
+        await db.execute(select(1))
     except Exception:
         db_connected = False
 

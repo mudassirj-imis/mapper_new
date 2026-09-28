@@ -1,0 +1,380 @@
+"""Isolated scheduler tests.
+
+Each test runs the scheduler in a child process with a temporary SQLite path,
+so the repository's real ``.env`` and application database are never touched.
+"""
+import os
+import subprocess
+import sys
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def run_isolated(body: str, prepare: str = "") -> None:
+    with tempfile.TemporaryDirectory(prefix="mapper-scheduler-test-") as directory:
+        env = os.environ.copy()
+        env.update(
+            {
+                "JWT_SECRET": "scheduler-test",
+                "ENCRYPTION_KEY": "scheduler-test",
+                "AUTH_BASE_URL": "https://auth.test",
+                "DATABASE_URL": "sqlite+aiosqlite:///:memory:",
+                "SCHEDULER_DATABASE_PATH": str(Path(directory) / "scheduler.db"),
+                "SCHEDULER_ALLOWED_HOSTS": "example.test",
+            }
+        )
+        script = textwrap.dedent(
+            """
+            import asyncio
+            import httpx
+            from sqlalchemy import select
+            from backend.db.scheduler_session import SchedulerSessionLocal, create_scheduler_tables, dispose_scheduler_engine
+            from backend.models.scheduled_job import ScheduledJob, ScheduledJobRun
+            from backend.schemas.scheduled_job import ScheduledJobCreate
+            from backend.services import scheduler_service
+
+            async def main():
+                await create_scheduler_tables()
+                try:
+                    interval = scheduler_service.build_trigger(interval_seconds=15)
+                    cron = scheduler_service.build_trigger(cron="*/5 * * * *")
+                    assert interval.interval.total_seconds() == 15
+                    assert cron.fields[6].name == "minute"
+
+                    async def success_handler(request):
+                        assert request.url.host == "example.test"
+                        assert request.headers["host"] == "example.test"
+                        return httpx.Response(204, request=request)
+
+                    async with httpx.AsyncClient(transport=httpx.MockTransport(success_handler)) as client:
+                        scheduler_service._http_client = client
+                        run = await scheduler_service.execute_scheduled_job(
+                            "test-job", "https://example.test/health", "GET"
+                        )
+                    assert run.status_code == 204 and run.success
+                    assert run.response_body is None and run.response_size == 0
+
+                    async def failure_handler(request):
+                        raise httpx.ConnectError("connection refused", request=request)
+
+                    async with httpx.AsyncClient(transport=httpx.MockTransport(failure_handler)) as client:
+                        scheduler_service._http_client = client
+                        failed = await scheduler_service.execute_scheduled_job(
+                            "failed-job", "https://example.test/health", "GET"
+                        )
+                    assert failed.status_code is None and not failed.success
+
+                    async def redirect_handler(request):
+                        return httpx.Response(302, headers={"location": "http://127.0.0.1"}, request=request)
+
+                    async with httpx.AsyncClient(transport=httpx.MockTransport(redirect_handler)) as client:
+                        scheduler_service._http_client = client
+                        redirected = await scheduler_service.execute_scheduled_job(
+                            "redirect-job", "https://example.test/health", "GET"
+                        )
+                    assert redirected.status_code == 302 and not redirected.success
+                    assert redirected.error == "Redirect responses are not followed"
+
+                    async with SchedulerSessionLocal() as db:
+                        rows = list((await db.execute(select(ScheduledJobRun))).scalars().all())
+                    assert {row.job_id for row in rows} == {"test-job", "failed-job", "redirect-job"}
+                    assert next(row for row in rows if row.job_id == "failed-job").error == "Request failed"
+                finally:
+                    await dispose_scheduler_engine()
+                    scheduler_service._http_client = None
+
+            asyncio.run(main())
+            """
+        )
+        script = prepare + "\n" + script + "\n" + textwrap.dedent(body)
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode:
+            raise AssertionError(result.stderr or result.stdout)
+
+
+class SchedulerIntegrationTests(unittest.TestCase):
+    def test_scheduler_uses_temporary_sqlite_and_persists_runs(self):
+        run_isolated("")
+
+    def test_scheduler_payload_validation(self):
+        run_isolated(
+            """
+            from pydantic import ValidationError
+            from backend.services.scheduler_security import (
+                UnsafeDestinationError,
+                validate_destination,
+            )
+            try:
+                ScheduledJobCreate(url="https://example.test")
+            except ValidationError:
+                pass
+            else:
+                raise AssertionError("missing schedule was accepted")
+            try:
+                ScheduledJobCreate(
+                    url="https://user:password@example.test", interval_seconds=5
+                )
+            except ValidationError:
+                pass
+            else:
+                raise AssertionError("credential URL was accepted")
+            try:
+                validate_destination("http://127.0.0.1/health")
+            except UnsafeDestinationError:
+                pass
+            else:
+                raise AssertionError("loopback destination was accepted")
+            """
+        )
+
+    def test_scheduler_payload_validation(self):
+        run_isolated(
+            """
+            from pydantic import ValidationError
+
+            def rejected(**kwargs):
+                try:
+                    ScheduledJobCreate(**kwargs)
+                except ValidationError:
+                    return
+                raise AssertionError(f"invalid payload accepted: {kwargs}")
+
+            base = {"url": "https://example.test", "interval_seconds": 60}
+
+            # A body is meaningless for GET, and headers must stay safe.
+            rejected(**base, method="GET", body='{"a":1}')
+            rejected(**base, method="HEAD", body="x")
+            rejected(**base, headers={"Host": "evil.test"})
+            rejected(**base, headers={"Content-Length": "10"})
+            rejected(**base, headers={"X-Bad": "a\\r\\nInjected: yes"})
+            rejected(**base, headers={"Bad Name": "x"})
+            rejected(**base, headers={"X-Api-Key": {"nested": 1}})
+
+            # A valid POST with headers and a body is accepted as given.
+            created = ScheduledJobCreate(
+                url="https://example.test",
+                method="post",
+                interval_seconds=60,
+                headers={"X-Api-Key": "secret", "Accept": "application/json"},
+                body='{"a":1}',
+            )
+            assert created.method == "POST"
+            assert created.headers == {
+                "X-Api-Key": "secret",
+                "Accept": "application/json",
+            }
+            assert created.body == '{"a":1}'
+
+            # Empty header maps and bodies normalise away instead of storing "".
+            empty = ScheduledJobCreate(
+                url="https://example.test", interval_seconds=60, headers={}, body=""
+            )
+            assert empty.headers is None and empty.body is None
+
+            assert scheduler_service.guess_content_type('{"a":1}') == "application/json"
+            assert scheduler_service.guess_content_type("<a/>") == "application/xml"
+            assert scheduler_service.guess_content_type("hi") == "text/plain; charset=utf-8"
+            assert scheduler_service.load_headers(None) is None
+            assert scheduler_service.load_headers("not json") is None
+            assert scheduler_service.load_headers(
+                scheduler_service.dump_headers({"A": "b"})
+            ) == {"A": "b"}
+            assert scheduler_service.dump_headers(None) is None
+            """
+        )
+
+    def test_run_timestamps_are_serialised_as_utc(self):
+        run_isolated(
+            """
+            import json
+            from datetime import datetime, timedelta, timezone
+            from backend.schemas.scheduled_job import ScheduledJobRunSummary
+
+            def summary(ran_at):
+                return ScheduledJobRunSummary(
+                    id=1, job_id="j", url="https://example.test", method="GET",
+                    status_code=200, success=True, duration_ms=1, error=None,
+                    ran_at=ran_at,
+                )
+
+            # SQLite hands back naive datetimes; they must be labelled UTC so
+            # the browser does not read them as local time. Pydantic renders a
+            # UTC offset as the "Z" designator.
+            naive = datetime(2026, 9, 28, 7, 53, 19, 911501)
+            emitted = json.loads(summary(naive).model_dump_json())["ran_at"]
+            assert emitted.endswith("Z"), emitted
+            assert emitted.startswith("2026-09-28T07:53:19.911501"), emitted
+            assert summary(naive).ran_at.tzinfo is timezone.utc
+
+            # An already-aware value is converted, not reinterpreted: 12:53
+            # at +05:00 is the same instant as 07:53 UTC.
+            offset = datetime(2026, 9, 28, 12, 53, 19, tzinfo=timezone(timedelta(hours=5)))
+            converted = summary(offset).ran_at
+            assert converted == datetime(2026, 9, 28, 7, 53, 19, tzinfo=timezone.utc)
+            assert converted.tzinfo is timezone.utc
+
+            # Seconds survive the round trip, so the UI can show them.
+            assert ".911501" in emitted
+            """
+        )
+
+    def test_scheduler_sends_body_and_captures_response(self):
+        run_isolated(
+            """
+            import asyncio
+
+            async def check():
+                captured = {}
+
+                async def handler(request):
+                    captured["content"] = request.content
+                    captured["headers"] = dict(request.headers)
+                    return httpx.Response(
+                        201,
+                        content=b'{"ok": true}',
+                        headers={"x-custom": "abc"},
+                        request=request,
+                    )
+
+                payload = ScheduledJobCreate(
+                    url="https://example.test/jobs",
+                    method="POST",
+                    interval_seconds=60,
+                    headers={"X-Api-Key": "secret"},
+                    body='{"hello": "world"}',
+                )
+                async with SchedulerSessionLocal() as db:
+                    row = ScheduledJob(
+                        job_id=payload.job_id,
+                        name=payload.name,
+                        url=payload.url,
+                        method=payload.method,
+                        headers=scheduler_service.dump_headers(payload.headers),
+                        body=payload.body,
+                        cron=payload.cron,
+                        interval_seconds=payload.interval_seconds,
+                        enabled=True,
+                        created_by=None,
+                    )
+                    db.add(row)
+                    await db.commit()
+
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                    scheduler_service._http_client = client
+                    run = await scheduler_service.execute_scheduled_job(
+                        row.job_id, row.url, row.method
+                    )
+
+                # The body and custom headers reached the server, and a
+                # content type was inferred for them.
+                assert captured["content"] == b'{"hello": "world"}'
+                assert captured["headers"]["x-api-key"] == "secret"
+                assert captured["headers"]["content-type"] == "application/json"
+
+                assert run.status_code == 201 and run.success
+                assert run.response_body == '{"ok": true}'
+                assert run.response_size == 12 and not run.response_body_truncated
+                assert (
+                    scheduler_service.load_headers(run.response_headers)["x-custom"]
+                    == "abc"
+                )
+                sent = scheduler_service.load_headers(run.request_headers)
+                assert sent["X-Api-Key"] == "secret"
+                assert sent["content-type"] == "application/json"
+
+                # The detail route reads the same row back through the service.
+                async with SchedulerSessionLocal() as db:
+                    fetched = await scheduler_service.get_run(db, run.id)
+                assert fetched is not None and fetched.response_body == run.response_body
+
+                # Oversized responses are cut at the limit and flagged as such.
+                async def big_handler(request):
+                    return httpx.Response(200, content=b"x" * 200000, request=request)
+
+                async with httpx.AsyncClient(transport=httpx.MockTransport(big_handler)) as client:
+                    scheduler_service._http_client = client
+                    large = await scheduler_service.execute_scheduled_job(
+                        row.job_id, row.url, "GET"
+                    )
+                assert large.response_body_truncated
+                assert len(large.response_body) == 65536
+                assert large.response_size == 65536
+
+            asyncio.run(check())
+            """
+        )
+
+    def test_scheduler_migrates_pre_existing_database(self):
+        legacy = textwrap.dedent(
+            """
+            import sqlite3
+            from backend.core.config import settings
+
+            connection = sqlite3.connect(settings.SCHEDULER_DATABASE_PATH)
+            connection.executescript(
+                "CREATE TABLE scheduled_jobs ("
+                " job_id VARCHAR(255) NOT NULL, name VARCHAR(255), url TEXT NOT NULL,"
+                " method VARCHAR(16) NOT NULL, cron VARCHAR(255), interval_seconds INTEGER,"
+                " enabled BOOLEAN NOT NULL, created_by INTEGER, created_at DATETIME NOT NULL,"
+                " updated_at DATETIME NOT NULL, PRIMARY KEY (job_id));"
+                "CREATE TABLE scheduled_job_runs ("
+                " id INTEGER NOT NULL, job_id VARCHAR(255) NOT NULL, url TEXT NOT NULL,"
+                " method VARCHAR(16) NOT NULL, status_code INTEGER, success BOOLEAN NOT NULL,"
+                " duration_ms INTEGER NOT NULL, error TEXT, ran_at DATETIME NOT NULL,"
+                " PRIMARY KEY (id));"
+                "INSERT INTO scheduled_jobs VALUES"
+                " ('legacy', 'Legacy', 'https://example.test/health', 'GET', NULL, 60, 1,"
+                "  NULL, '2024-01-01 00:00:00', '2024-01-01 00:00:00');"
+            )
+            connection.commit()
+            connection.close()
+            """
+        )
+        run_isolated(
+            """
+            import asyncio
+            import sqlite3
+            from backend.core.config import settings
+
+            async def check():
+                connection = sqlite3.connect(settings.SCHEDULER_DATABASE_PATH)
+                job_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(scheduled_jobs)")
+                }
+                run_columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(scheduled_job_runs)")
+                }
+                connection.close()
+
+                assert {"headers", "body"} <= job_columns, job_columns
+                assert {
+                    "request_headers",
+                    "response_headers",
+                    "response_body",
+                    "response_body_truncated",
+                    "response_size",
+                } <= run_columns, run_columns
+
+                # The pre-existing row survives and stays readable by the service.
+                async with SchedulerSessionLocal() as db:
+                    row = await scheduler_service._fetch_job(db, "legacy")
+                assert row is not None and row.method == "GET"
+                assert row.headers is None and row.body is None
+
+            asyncio.run(check())
+            """,
+            prepare=legacy,
+        )

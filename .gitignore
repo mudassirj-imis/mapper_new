@@ -17,3 +17,8 @@ Thumbs.db
 .DS_Store
 
 .ruff_cache
+
+# Dedicated scheduler state and history
+scheduler.db
+scheduler.db-shm
+scheduler.db-wal

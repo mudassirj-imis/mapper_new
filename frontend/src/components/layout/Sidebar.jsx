@@ -7,6 +7,7 @@ import {
 	ListAlt,
 	Logout,
 	Send as SendIcon,
+	Schedule,
 	Storage,
 } from "@mui/icons-material";
 import {
@@ -52,6 +53,7 @@ const NAV_ITEMS = [
 		icon: <SendIcon fontSize="small" />,
 	},
 	{ label: "Call Logs", to: "/logs", icon: <ListAlt fontSize="small" /> },
+	{ label: "Cron Jobs", to: "/scheduled-jobs", icon: <Schedule fontSize="small" /> },
 	{ label: "SFTP Browser", to: "/sftp", icon: <Storage fontSize="small" /> },
 	{
 		label: "Export / Import",

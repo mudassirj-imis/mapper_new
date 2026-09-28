@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.core.config import settings
 from backend.services.http_client import create_http_client
+from backend.services.scheduler_service import start_scheduler, stop_scheduler
 
 
 #   health_router, logs_router (Task 8), sftp_router, export_import_router,
@@ -28,6 +29,7 @@ from backend.api.logs_router import router as logs_router
 from backend.api.mock_router import router as mock_router
 from backend.api.parameters_router import router as parameters_router
 from backend.api.sftp_router import router as sftp_router
+from backend.api.scheduled_jobs_router import router as scheduled_jobs_router
 from backend.api.webhook_router import router as webhook_router
 
 from backend.middleware.rate_limit import RateLimitMiddleware
@@ -44,8 +46,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     app.state.http_client = create_http_client()
     try:
+        await start_scheduler(app.state.http_client)
         yield
     finally:
+        await stop_scheduler()
         await app.state.http_client.aclose()
 
 
@@ -76,6 +80,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/api")
     app.include_router(logs_router, prefix="/api")
     app.include_router(sftp_router, prefix="/api")
+    app.include_router(scheduled_jobs_router, prefix="/api")
     app.include_router(export_import_router, prefix="/api")
     app.include_router(mock_router, prefix="/api")
     app.include_router(webhook_router, prefix="/api")

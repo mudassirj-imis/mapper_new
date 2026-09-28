@@ -23,6 +23,8 @@ _RAW_STRING_FIELDS = frozenset(
         "SFTP_PRIVATE_KEY_PATHS",
         "WEBHOOK_ALLOWED_HOSTS",
         "WEBHOOK_ALLOWED_CIDRS",
+        "SCHEDULER_ALLOWED_HOSTS",
+        "SCHEDULER_ALLOWED_CIDRS",
         "UPSTREAM_API_TOKENS",
     }
 )
@@ -69,6 +71,21 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: list[str] = ["*"]
     API_TIMEOUT_SECONDS: int = 60
+    # Dedicated SQLite file; never use DATABASE_URL for scheduler state.
+    SCHEDULER_DATABASE_PATH: str = "scheduler.db"
+    SCHEDULER_TIMEZONE: str = "UTC"
+    SCHEDULER_REQUEST_TIMEOUT_SECONDS: float = 30.0
+    SCHEDULER_DNS_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
+    SCHEDULER_ALLOWED_HOSTS: list[str] = Field(default_factory=list)
+    SCHEDULER_ALLOWED_CIDRS: list[str] = Field(default_factory=list)
+    SCHEDULER_ALLOW_PRIVATE_NETWORKS: bool = False
+    SCHEDULER_MAX_CONCURRENT_JOBS: int = Field(default=10, gt=0)
+    SCHEDULER_MAX_JOBS: int = Field(default=100, gt=0)
+    SCHEDULER_RUN_RETENTION_DAYS: int = Field(default=90, gt=0)
+    # Payload guards for the optional request body / captured response body.
+    SCHEDULER_MAX_REQUEST_BODY_BYTES: int = Field(default=65536, gt=0)
+    SCHEDULER_MAX_RESPONSE_BODY_BYTES: int = Field(default=65536, gt=0)
+    SCHEDULER_MAX_HEADERS: int = Field(default=32, gt=0)
 
     APP_ROOT_PATH: str = ""
 
@@ -193,6 +210,8 @@ class Settings(BaseSettings):
         "SFTP_PRIVATE_KEY_PATHS",
         "WEBHOOK_ALLOWED_HOSTS",
         "WEBHOOK_ALLOWED_CIDRS",
+        "SCHEDULER_ALLOWED_HOSTS",
+        "SCHEDULER_ALLOWED_CIDRS",
         mode="before",
     )
     @classmethod

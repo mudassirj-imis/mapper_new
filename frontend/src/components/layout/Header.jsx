@@ -21,6 +21,7 @@ const PAGE_TITLES = {
 	"/create-mapping": "Create Mapping",
 	"/gateway": "Gateway Tester",
 	"/logs": "Call Logs",
+	"/scheduled-jobs": "Cron Jobs",
 	"/sftp": "SFTP Browser",
 	"/export-import": "Export / Import",
 };

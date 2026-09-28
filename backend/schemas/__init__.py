@@ -21,6 +21,12 @@ from backend.schemas.parameter import (
     ParameterCreate,
     ParameterResponse,
 )
+from backend.schemas.scheduled_job import (
+    ScheduledJobCreate,
+    ScheduledJobResponse,
+    ScheduledJobRunResponse,
+    ScheduledJobToggle,
+)
 
 __all__ = [
     "LoginRequest",
@@ -43,4 +49,8 @@ __all__ = [
     "ParameterBulkCreate",
     "ParameterCreate",
     "ParameterResponse",
+    "ScheduledJobCreate",
+    "ScheduledJobResponse",
+    "ScheduledJobRunResponse",
+    "ScheduledJobToggle",
 ]
