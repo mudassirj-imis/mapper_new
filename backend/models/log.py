@@ -76,6 +76,46 @@ class ApiCallLog(Base):
         nullable=True,
     )
 
+    #: Header audit trail. The gateway already captures both sides of the
+    #: exchange; these columns persist it so the log view can show it.
+    source_request_headers: Mapped[dict[str, Any] | None] = mapped_column(
+        "source_request_headers",
+        JSON,
+        nullable=True,
+    )
+
+    source_response_headers: Mapped[dict[str, Any] | None] = mapped_column(
+        "source_response_headers",
+        JSON,
+        nullable=True,
+    )
+
+    target_request_headers: Mapped[dict[str, Any] | None] = mapped_column(
+        "target_request_headers",
+        JSON,
+        nullable=True,
+    )
+
+    target_response_headers: Mapped[dict[str, Any] | None] = mapped_column(
+        "target_response_headers",
+        JSON,
+        nullable=True,
+    )
+
+    #: HTTP status returned to the client, and the upstream's, kept apart so a
+    #: gateway-side 200 is distinguishable from an upstream 200.
+    client_status_code: Mapped[int | None] = mapped_column(
+        "client_status_code",
+        Integer,
+        nullable=True,
+    )
+
+    upstream_status_code: Mapped[int | None] = mapped_column(
+        "upstream_status_code",
+        Integer,
+        nullable=True,
+    )
+
     status: Mapped[str | None] = mapped_column(
         "status",
         String(20),

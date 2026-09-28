@@ -135,17 +135,18 @@ export default function LogsPage() {
 	const handleExport = async () => {
 		setExporting(true);
 		try {
-			const exported = await logService.getLogs({
-				...requestParams,
-				page: 1,
-				per_page: 1000,
-			});
+			// `requestParams` carries the paging values, so it is stripped and
+			// replaced with a single `limit` -- the server rejects the two
+			// together, and `per_page` tops out at 200 anyway.
+			const exported = await logService.getLogsForExport(requestParams);
 			const items = exported?.items ?? [];
+			const total = exported?.total ?? items.length;
 			const payload = {
 				exported_at: new Date().toISOString(),
 				filters: applied,
-				total: exported?.total ?? items.length,
+				total,
 				count: items.length,
+				truncated: total > items.length,
 				logs: items,
 			};
 			const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -160,8 +161,10 @@ export default function LogsPage() {
 			anchor.remove();
 			URL.revokeObjectURL(url);
 			showSnackbar(
-				`Exported ${items.length} log ${items.length === 1 ? "entry" : "entries"}.`,
-				"success",
+				total > items.length
+					? `Exported the newest ${items.length} of ${total} matching logs.`
+					: `Exported ${items.length} log ${items.length === 1 ? "entry" : "entries"}.`,
+				total > items.length ? "warning" : "success",
 			);
 		} catch (error) {
 			showSnackbar(

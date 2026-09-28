@@ -31,10 +31,20 @@ async def list_call_logs(
     method: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=200),
+    limit: int | None = Query(
+        default=None,
+        ge=1,
+        le=5000,
+        description=(
+            "Window over the newest N matching logs, composed with the "
+            "pagination parameters: the result is at most "
+            "`ceil(limit / per_page)` pages, and `page` selects the slice "
+            "within it."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(get_current_active_user),
 ) -> CallLogListResponse:
-
     total, items, page, per_page = await log_service.list_logs(
         db,
         endpoint_id=endpoint_id,
@@ -44,6 +54,7 @@ async def list_call_logs(
         method=method,
         page=page,
         per_page=per_page,
+        limit=limit,
     )
 
     pages = (total + per_page - 1) // per_page if total else 0

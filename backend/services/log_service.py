@@ -9,10 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import ApiCallLog, ApiEndpoint, CallStatusEnum
 from backend.schemas.log import CallLogSummary, CallLogResponse
+from backend.services.log_writer import redact
 
 __all__ = ["get_log", "list_logs"]
 
 _MAX_PER_PAGE = 200
+#: Ceiling for ``limit``, which skips pagination and returns the newest N rows.
+_MAX_LIMIT = 5000
 
 _VALID_STATUS = {member.value for member in CallStatusEnum}
 
@@ -53,8 +56,17 @@ async def list_logs(
     method: str | None = None,
     page: int = 1,
     per_page: int = 20,
+    limit: int | None = None,
 ) -> tuple[int, list[CallLogSummary], int, int]:
-    """Return ``(total, items, page, per_page)``; page is 1-based."""
+    """Return ``(total, items, page, per_page)``; page is 1-based.
+
+    ``limit`` composes with the paging arguments instead of replacing them: it
+    defines a window over the newest N matching rows, so the response is
+    ``limit / per_page`` pages at most and ``page`` selects the slice within
+    that window. For example ``limit=40, per_page=20, page=2`` returns the
+    second of two pages -- twenty rows, ids 80..61 for a hundred matches.
+    Passing ``limit`` alone therefore behaves like "give me the newest N".
+    """
 
     conditions = []
 
@@ -85,6 +97,17 @@ async def list_logs(
     page = max(1, int(page))
     per_page = max(1, min(int(per_page), _MAX_PER_PAGE))
 
+    offset = (page - 1) * per_page
+    row_cap = per_page
+    if limit is not None:
+        # ``limit`` is a window over the newest N matches and composes with
+        # paging: it caps the total (``total``/``pages`` below are derived from
+        # it) and clips the rows a single page may return, so
+        # ``limit=40&per_page=20`` is exactly two pages of twenty.
+        limit = max(1, min(int(limit), _MAX_LIMIT))
+        # A page that starts past the window has nothing left to return.
+        row_cap = max(0, min(per_page, limit - offset))
+
     count_stmt = (
         select(func.count())
         .select_from(ApiCallLog)
@@ -98,6 +121,11 @@ async def list_logs(
     count_result = await db.execute(count_stmt)
     total = int(count_result.scalar() or 0)
 
+    if limit is not None:
+        # The window is the result set: the caller asked for the newest N, so
+        # the count is capped rather than reporting matches they can never see.
+        total = min(total, limit)
+
     stmt = (
         select(ApiCallLog, ApiEndpoint)
         .join(
@@ -106,8 +134,8 @@ async def list_logs(
         )
         .where(*conditions)
         .order_by(ApiCallLog.id.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
+        .offset(offset)
+        .limit(row_cap)
     )
 
     result = await db.execute(stmt)
@@ -129,19 +157,21 @@ async def list_logs(
                 if log.status is not None
                 else None
             ),
-            internal_request_headers=None,
-            internal_request_body=log.source_request_payload,
-            internal_api_client_response=log.source_response,
-            internal_api_client_status=None,
+            # Re-redacted on read as well as on write: rows written before
+            # masking existed still hold plaintext credentials.
+            internal_request_headers=redact(log.source_request_headers),
+            internal_request_body=redact(log.source_request_payload),
+            internal_api_client_response=redact(log.source_response),
+            internal_api_client_status=log.client_status_code,
             external_request_url=endpoint.target_api_url,
             external_request_method=endpoint.method,
-            external_request_headers=None,
-            external_request_body=log.target_request_payload,
+            external_request_headers=redact(log.target_request_headers),
+            external_request_body=redact(log.target_request_payload),
             external_query_params=None,
-            external_response=log.target_response,
-            external_response_headers=None,
+            external_response=redact(log.target_response),
+            external_response_headers=redact(log.target_response_headers),
             external_response_time_ms=log.response_time_ms,
-            external_status_code=None,
+            external_status_code=log.upstream_status_code,
             total_time_ms=log.response_time_ms,
             created_at=log.created_at,
         )
@@ -193,20 +223,22 @@ async def get_log(
             if log.status is not None
             else None
         ),
-        internal_request_headers=None,
-        internal_request_body=log.source_request_payload,
-        internal_api_client_response=log.source_response,
-        internal_api_client_status=None,
+        # Re-redacted on read as well as on write, so rows written before
+        # masking existed never expose a plaintext credential.
+        internal_request_headers=redact(log.source_request_headers),
+        internal_request_body=redact(log.source_request_payload),
+        internal_api_client_response=redact(log.source_response),
+        internal_api_client_status=log.client_status_code,
         external_request_url=endpoint.target_api_url,
         external_request_method=endpoint.method,
-        external_request_headers=None,
-        external_request_body=log.target_request_payload,
+        external_request_headers=redact(log.target_request_headers),
+        external_request_body=redact(log.target_request_payload),
         external_query_params=None,
-        external_response=log.target_response,
-        external_response_headers=None,
+        external_response=redact(log.target_response),
+        external_response_headers=redact(log.target_response_headers),
         external_response_time_ms=log.response_time_ms,
         total_time_ms=log.response_time_ms,
-        external_status_code=None,
+        external_status_code=log.upstream_status_code,
         full_log=None,
         timeout_configured=None,
         tenant_id=None,

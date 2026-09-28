@@ -3,9 +3,22 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.schemas.common import PaginatedResponse
+
+
+def _coerce_status(value: Any) -> str | None:
+    """Render ``internal_api_client_status`` as text, whatever it holds.
+
+    The column is free-text for historical rows and an integer status code for
+    new ones; the field stays a string so existing consumers are unaffected.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return str(value)
 
 
 class CallLogResponse(BaseModel):
@@ -51,6 +64,9 @@ class CallLogResponse(BaseModel):
     internal_request_headers: dict[str, Any] | None = None
     internal_request_body: dict[str, Any] | None = None
     internal_api_client_response: dict[str, Any] | None = None
+    #: Historically free-text; now also carries the HTTP status returned to
+    #: the client, so both forms are accepted and the value is stringified so
+    #: existing consumers keep working.
     internal_api_client_status: str | None = None
 
     external_request_url: str | None = None
@@ -64,6 +80,10 @@ class CallLogResponse(BaseModel):
 
     full_log: str | None = None
     timeout_configured: int | None = None
+
+    _status_to_text = field_validator(
+        "internal_api_client_status", mode="before"
+    )(_coerce_status)
 
 
 class CallLogSummary(BaseModel):
@@ -98,6 +118,10 @@ class CallLogSummary(BaseModel):
     external_response: Any | None = None
     external_response_headers: dict[str, Any] | None = None
     external_response_time_ms: int | None = None
+
+    _status_to_text = field_validator(
+        "internal_api_client_status", mode="before"
+    )(_coerce_status)
 
 
 class CallLogListResponse(PaginatedResponse):
