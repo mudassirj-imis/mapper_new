@@ -97,15 +97,28 @@ class Settings(BaseSettings):
     #: full-detail MongoDB document for every call. The MySQL row carries no
     #: headers, query string or captured log, so the detail blocks in the UI
     #: render empty unless we look the document up. Disable to serve MySQL only.
-    AUDIT_MONGO_URI: str = "mongodb://localhost:27017/"
-    AUDIT_MONGO_DATABASE: str = "gateway_logs_db"
-    AUDIT_MONGO_COLLECTION: str = "api_gateway_logs"
+    #:
+    #: These three are required, with no built-in default. A hardcoded
+    #: ``localhost`` fallback is worse than a missing value: it would connect
+    #: cleanly to the wrong database -- or to nothing at all -- and the log
+    #: views would render empty with no error to explain why. Failing to start
+    #: names the omission instead. Set them in the environment or in ``.env``;
+    #: see ``.env.example``.
+    AUDIT_MONGO_URI: str
+    AUDIT_MONGO_DATABASE: str
+    AUDIT_MONGO_COLLECTION: str
     #: How far either side of a row's ``created_at`` to look for its document.
     #: Both records are written by the same in-process call, so they land within
     #: milliseconds; the slack only absorbs clock jitter and slow inserts.
     AUDIT_MATCH_WINDOW_SECONDS: float = Field(default=5.0, gt=0)
     #: Mongo must never add latency to the log views; fail fast, not slow.
     AUDIT_MONGO_TIMEOUT_MS: int = Field(default=1500, gt=0)
+    #: Whether to also write this backend's own calls to MongoDB. ``None`` is
+    #: automatic: mirror only when ``api_call_log`` is missing the header columns
+    #: (see :mod:`backend.db.schema_probe`), so the detail survives a database
+    #: the service account cannot ``ALTER`` and a migrated database keeps
+    #: paying nothing. Set explicitly to force the choice either way.
+    AUDIT_MONGO_MIRROR: bool | None = None
 
     APP_ROOT_PATH: str = ""
 

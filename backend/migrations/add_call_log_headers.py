@@ -11,6 +11,17 @@ Usage::
 
 It is a no-op once the columns exist, so it can be wired into a deploy step
 without special-casing.
+
+Usage::
+
+    python -m backend.migrations.add_call_log_headers            # add what is missing
+    python -m backend.migrations.add_call_log_headers --check    # report only
+
+On a host whose MySQL account cannot ``ALTER TABLE`` this cannot run, and that
+is fine: the service adapts to the schema it finds rather than requiring it
+(see :mod:`backend.db.schema_probe`). The detail is served from MongoDB there,
+so running this later is an improvement -- MySQL becomes the authority again --
+not a prerequisite for the log views working at all.
 """
 
 from __future__ import annotations
@@ -36,6 +47,20 @@ ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 _TABLE = "api_call_log"
+
+
+async def _missing_columns() -> list[tuple[str, str]]:
+    """The pairs above that the connected table does not have yet."""
+    async with engine.connect() as connection:
+
+        def _run(sync_connection) -> list[tuple[str, str]]:
+            inspector = inspect(sync_connection)
+            if not inspector.has_table(_TABLE):
+                return []
+            existing = {column["name"] for column in inspector.get_columns(_TABLE)}
+            return [pair for pair in ADDED_COLUMNS if pair[0] not in existing]
+
+        return await connection.run_sync(_run)
 
 
 async def ensure_columns() -> list[str]:
@@ -64,11 +89,21 @@ async def ensure_columns() -> list[str]:
 
 
 async def main() -> int:
-    added = await ensure_columns()
-    if added:
-        print(f"api_call_log: added {', '.join(added)}")
+    if "--check" in sys.argv[1:]:
+        missing = await _missing_columns()
+        if missing:
+            print(
+                f"{_TABLE}: missing {', '.join(column for column, _ in missing)}"
+            )
+        else:
+            print(f"{_TABLE}: up to date")
     else:
-        print("api_call_log: already up to date")
+        added = await ensure_columns()
+        if added:
+            print(f"{_TABLE}: added {', '.join(added)}")
+        else:
+            print(f"{_TABLE}: already up to date")
+
     await engine.dispose()
     return 0
 

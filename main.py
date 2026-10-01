@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.core.config import settings
+from backend.db import schema_probe as audit_schema
 from backend.services.http_client import create_http_client
 from backend.services.scheduler_service import start_scheduler, stop_scheduler
 
@@ -45,6 +46,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     app.state.http_client = create_http_client()
     try:
+        # Learn which audit columns this database actually has before the first
+        # request needs them, so a schema the service account cannot migrate
+        # degrades to a MongoDB-backed detail view instead of MySQL error 1054.
+        await audit_schema.warm()
         await start_scheduler(app.state.http_client)
         yield
     finally:

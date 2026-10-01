@@ -35,9 +35,14 @@ class CallLogResponse(BaseModel):
     endpoint join. Every one of those fields must stay declared here: FastAPI
     serialises through ``response_model``, so an undeclared field is silently
     dropped from the payload and the detail view renders empty.
+
+    ``validate_assignment`` is required because the MongoDB enrichment merges
+    with ``setattr`` after construction, which bypasses ``mode="before"``
+    validators -- an integer status code from a document would otherwise be
+    left in a ``str`` field and serialised with a pydantic warning.
     """
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, validate_assignment=True)
 
     id: int
     endpoint_id: int | None = None
@@ -92,7 +97,9 @@ class CallLogResponse(BaseModel):
 class CallLogSummary(BaseModel):
     """Trimmed log row for list views."""
 
-    model_config = ConfigDict(from_attributes=True)
+    # ``validate_assignment`` for the same reason as ``CallLogResponse``: the
+    # enrichment merge assigns onto an already-built instance.
+    model_config = ConfigDict(from_attributes=True, validate_assignment=True)
 
     id: int
     endpoint_id: int | None = None

@@ -14,12 +14,28 @@ from pydantic import ValidationError
 from pydantic_settings import DotEnvSettingsSource
 from sqlalchemy.ext.asyncio import AsyncSession
 
+#: The audit-store settings every ``Settings`` construction needs. They are
+#: required (no built-in default), so a test that builds one explicitly -- or
+#: imports the module with a cleared environment -- must supply them. Sharing
+#: one definition keeps the two lists from drifting apart.
+#:
+#: ``.invalid`` is reserved by RFC 2606 and never resolves, so an accidental
+#: connection attempt fails immediately instead of reaching a real host.
+AUDIT_TEST_SETTINGS: dict[str, str] = {
+    "AUDIT_MONGO_URI": "mongodb://audit-store.invalid:27017/",
+    "AUDIT_MONGO_DATABASE": "audit_test_db",
+    "AUDIT_MONGO_COLLECTION": "audit_test_collection",
+}
+
 with (
     patch.dict(
         os.environ,
         {
             "JWT_SECRET": "foundation-test-only",
             "ENCRYPTION_KEY": "foundation-test-only",
+            # Supplied here so this module does not depend on a developer's
+            # ``.env``; see :data:`AUDIT_TEST_SETTINGS`.
+            **AUDIT_TEST_SETTINGS,
         },
         clear=True,
     ),
@@ -662,6 +678,7 @@ class SchemaAndConfigTests(unittest.TestCase):
                 JWT_SECRET="test",
                 ENCRYPTION_KEY="test",
                 AUTH_BASE_URL="https://auth.test",
+                **AUDIT_TEST_SETTINGS,
                 **kwargs,
             )
 
@@ -701,6 +718,7 @@ class SchemaAndConfigTests(unittest.TestCase):
                 JWT_SECRET="test",
                 ENCRYPTION_KEY="test",
                 AUTH_BASE_URL="https://auth.test",
+                **AUDIT_TEST_SETTINGS,
             )
         self.assertEqual(
             settings.WEBHOOK_ALLOWED_HOSTS, ["receiver.test", "other.test"]

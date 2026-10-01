@@ -4,8 +4,10 @@ import logging
 import re
 from typing import Any
 
+from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.db.schema_probe import probe as schema_probe
 from backend.models import ApiCallLog, CallStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -161,6 +163,20 @@ def _client_response(log_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _inserted_id(result: Any) -> int | None:
+    """Primary key of the row just written, for stamping the MongoDB mirror.
+
+    Read from the driver's own report rather than a second query, so it costs
+    nothing extra. It only labels the audit document, so ``None`` simply skips
+    the mirror rather than failing a call that is already recorded in MySQL.
+    """
+    try:
+        return result.inserted_primary_key[0]
+    except Exception:
+        logger.debug("Insert did not report a primary key", exc_info=True)
+        return None
+
+
 async def write_call_log(
     db: AsyncSession,
     log_data: dict[str, Any],
@@ -174,56 +190,84 @@ async def write_call_log(
             CallStatusEnum.SUCCESS.value if succeeded else CallStatusEnum.FAILED.value
         )
 
-        record = ApiCallLog(
-            endpoint_id=log_data.get("endpoint_id"),
-            # ``request_headers`` is what the client sent; the external
-            # ``external_request_headers`` is what went out upstream, which
-            # additionally carries any auth header the gateway injected.
-            source_request_headers=_headers(
-                log_data.get("request_headers")
-                or log_data.get("internal_request_headers")
-            ),
-            source_response_headers=_headers(
-                log_data.get("response_headers")
-                or log_data.get("internal_response_headers")
-            ),
-            target_request_headers=_headers(log_data.get("external_request_headers")),
-            target_response_headers=_headers(log_data.get("external_response_headers")),
-            # The query string the gateway actually dialled. The engine
-            # rebuilds it on the final request URL, so it also covers params
-            # already present on the target URL, not just mapped ones.
-            target_query_params=_query_params(log_data.get("external_query_params")),
-            client_status_code=log_data.get("status_code"),
-            upstream_status_code=log_data.get("external_status_code"),
-            source_request_payload=redact(
-                log_data.get("internal_request_body")
-                or log_data.get("request_body")
-                or {}
-            ),
-            source_response=_client_response(log_data),
-            target_request_payload=redact(log_data.get("external_request_body") or {}),
-            # The raw upstream body, kept separately from the gateway envelope
-            # above. Stored as ``{}`` rather than NULL so the audit trail never
-            # has to distinguish "no upstream body" from "not recorded".
-            target_response=redact(log_data.get("data") or {}),
-            status=status,
-            response_time_ms=(
-                log_data.get("external_response_time_ms")
-                or log_data.get("total_time_ms")
-                or 0
-            ),
-            error_message=log_data.get("error"),
+        values = schema_probe.writable(
+            {
+                "endpoint_id": log_data.get("endpoint_id"),
+                # ``request_headers`` is what the client sent; the external
+                # ``external_request_headers`` is what went out upstream, which
+                # additionally carries any auth header the gateway injected.
+                "source_request_headers": _headers(
+                    log_data.get("request_headers")
+                    or log_data.get("internal_request_headers")
+                ),
+                "source_response_headers": _headers(
+                    log_data.get("response_headers")
+                    or log_data.get("internal_response_headers")
+                ),
+                "target_request_headers": _headers(
+                    log_data.get("external_request_headers")
+                ),
+                "target_response_headers": _headers(
+                    log_data.get("external_response_headers")
+                ),
+                # The query string the gateway actually dialled. The engine
+                # rebuilds it on the final request URL, so it also covers params
+                # already present on the target URL, not just mapped ones.
+                "target_query_params": _query_params(
+                    log_data.get("external_query_params")
+                ),
+                "client_status_code": log_data.get("status_code"),
+                "upstream_status_code": log_data.get("external_status_code"),
+                "source_request_payload": redact(
+                    log_data.get("internal_request_body")
+                    or log_data.get("request_body")
+                    or {}
+                ),
+                "source_response": _client_response(log_data),
+                "target_request_payload": redact(
+                    log_data.get("external_request_body") or {}
+                ),
+                # The raw upstream body, kept separately from the gateway
+                # envelope above. Stored as ``{}`` rather than NULL so the audit
+                # trail never has to distinguish "no upstream body" from "not
+                # recorded".
+                "target_response": redact(log_data.get("data") or {}),
+                "status": status,
+                "response_time_ms": (
+                    log_data.get("external_response_time_ms")
+                    or log_data.get("total_time_ms")
+                    or 0
+                ),
+                "error_message": log_data.get("error"),
+            }
         )
 
-        db.add(record)
+        # A Core insert is used rather than the ORM's unit of work because the
+        # ORM emits every mapped column it has a Python-side value for -- and
+        # for ``Mapped[int | None]`` that includes columns never assigned, as
+        # an explicit NULL. On a table without them that is error 1054 again.
+        # Naming the columns ourselves is the only way to guarantee the
+        # statement matches the table.
+        result = await db.execute(insert(ApiCallLog.__table__).values(**values))
         await db.commit()
 
         logger.info(
             "api_call_log row written: endpoint=%s status=%s HTTP=%s (%sms)",
-            record.endpoint_id,
-            record.status,
+            values.get("endpoint_id"),
+            status,
             log_data.get("external_status_code"),
-            record.response_time_ms,
+            values.get("response_time_ms"),
+        )
+
+        # On a database missing the detail columns the row above cannot carry
+        # the headers and query string, so mirror the call to MongoDB and let
+        # the enrichment pass serve it. Skipped when the table is complete.
+        # Imported here because ``audit_enrichment`` imports ``redact`` from
+        # this module; a module-level import would be circular.
+        from backend.services import audit_enrichment
+
+        await audit_enrichment.mirror_call(
+            _inserted_id(result), log_data
         )
 
     except Exception:

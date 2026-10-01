@@ -21,6 +21,12 @@ with (
             "JWT_SECRET": "test",
             "ENCRYPTION_KEY": "test",
             "AUTH_BASE_URL": "https://auth.test",
+            # Required settings, supplied here so this module does not depend on
+            # a developer's ``.env``. No test reaches Mongo: the collection is
+            # stubbed or the store is disabled.
+            "AUDIT_MONGO_URI": "mongodb://audit-store.invalid:27017/",
+            "AUDIT_MONGO_DATABASE": "audit_test_db",
+            "AUDIT_MONGO_COLLECTION": "audit_test_collection",
         },
         clear=True,
     ),

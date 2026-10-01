@@ -27,7 +27,7 @@ git clone https://github.com/mudassirj-imis/mapper_new.git
     cd mapper_new/frontend
     cp .env.example .env
     
-    # Edit the values accordingly with reference to uat_user
+    # Edit the values accordingly with reference to uat1
 ```
 
 ## Step 4: Modify the path in ecosystem.config.js file
@@ -96,3 +96,41 @@ https://<BASE_URL>:<PORT>/integration-backend/docs  # Backend (PATH AS SET IN KO
 ## Ports:
 **Backend: 2528**  <br>
 **Frontend: 3005**
+
+## Step 8: Audit log columns (only if your MySQL account cannot ALTER TABLE)
+
+The call-log views read the request/response headers from `api_call_log`. Those
+columns are added by an additive migration:
+
+```bash
+cd mapper_new
+source venv/bin/activate
+python -m backend.migrations.add_call_log_headers --check   # report what is missing
+python -m backend.migrations.add_call_log_headers           # add them
+```
+
+If the MySQL user has no `ALTER` privilege this fails, and the log views used to
+fail with it (`Unknown column 'api_call_log.source_request_headers'`). They no
+longer do: the service inspects the table on startup, reads and writes only the
+columns that exist, and takes the headers, query string and captured log from
+MongoDB instead. It logs which columns it found missing at startup.
+
+For that fallback to work, MongoDB must be reachable and configured. These three
+settings are **required** — the service will not start without them, because a
+built-in `localhost` default would connect to the wrong place and leave every
+detail block silently empty:
+
+```
+AUDIT_MONGO_URI=mongodb://<host>:27017/
+AUDIT_MONGO_DATABASE=gateway_logs_db
+AUDIT_MONGO_COLLECTION=api_gateway_logs
+```
+
+When the columns are missing, this backend also writes its own calls to that
+collection, stamped with the row id, so **new** calls are detailed too and not
+just the ones the legacy gateway logged. This is automatic; `AUDIT_MONGO_MIRROR`
+forces it on or off.
+
+Running the migration later is still worthwhile — it makes MySQL the authority
+again and stops the service depending on MongoDB for the detail — but the log
+views work either way.

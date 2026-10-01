@@ -8,6 +8,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.db.schema_probe import probe as schema_probe
 from backend.models import ApiCallLog, ApiEndpoint, CallStatusEnum
 from backend.schemas.log import CallLogSummary, CallLogResponse
 from backend.services import audit_enrichment
@@ -70,7 +71,12 @@ async def list_logs(
     that window. For example ``limit=40, per_page=20, page=2`` returns the
     second of two pages -- twenty rows, ids 80..61 for a hundred matches.
     Passing ``limit`` alone therefore behaves like "give me the newest N".
+
+    The query is narrowed to the columns the connected server actually has (see
+    :mod:`backend.db.schema_probe`), so a host that cannot ``ALTER TABLE`` still
+    serves this view, with the absent columns filled from MongoDB below.
     """
+    await schema_probe.ensure(db)
 
     conditions = []
 
@@ -140,11 +146,18 @@ async def list_logs(
         .order_by(ApiCallLog.id.desc())
         .offset(offset)
         .limit(row_cap)
+        .options(*schema_probe.load_options())
     )
 
     result = await db.execute(stmt)
 
     rows = result.all()
+
+    # Columns the table lacks were left out of the SELECT; give them a value
+    # here so building the summary below cannot trigger a lazy load of a
+    # column MySQL would reject.
+    for log, _endpoint in rows:
+        schema_probe.apply_defaults(log)
 
     items = [
         CallLogSummary(
@@ -212,6 +225,8 @@ async def get_log(
     if identifier is None:
         return None
 
+    await schema_probe.ensure(db)
+
     result = await db.execute(
         select(ApiCallLog, ApiEndpoint)
         .join(
@@ -219,6 +234,7 @@ async def get_log(
             ApiCallLog.endpoint_id == ApiEndpoint.id,
         )
         .where(ApiCallLog.id == identifier)
+        .options(*schema_probe.load_options())
     )
 
     row = result.first()
@@ -227,6 +243,8 @@ async def get_log(
         return None
 
     log, endpoint = row
+
+    schema_probe.apply_defaults(log)
 
     return _enrich(
         CallLogResponse(
