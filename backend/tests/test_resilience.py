@@ -7,6 +7,7 @@ No network, database or secret files - everything is mocked (mirrors the style o
 import asyncio
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from fastapi import FastAPI, Request
@@ -15,7 +16,13 @@ from pydantic_settings import DotEnvSettingsSource
 
 with (
     patch.dict(
-        os.environ, {"JWT_SECRET": "test", "ENCRYPTION_KEY": "test"}, clear=True
+        os.environ,
+        {
+            "JWT_SECRET": "test",
+            "ENCRYPTION_KEY": "test",
+            "AUTH_BASE_URL": "https://auth.test",
+        },
+        clear=True,
     ),
     patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}),
 ):
@@ -196,12 +203,44 @@ class WebhookClassificationTests(unittest.TestCase):
 
 
 class LogServiceTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _log_row(log_id: int) -> tuple[SimpleNamespace, SimpleNamespace]:
+        """One ``(ApiCallLog, ApiEndpoint)`` pair with real attribute types.
+
+        ``list_logs`` unpacks rows into two entities and feeds them straight
+        into ``CallLogSummary``, so bare ``Mock()``s fail pydantic validation.
+        ``created_at`` is left ``None`` so the MongoDB enrichment lookup short
+        circuits and the test stays hermetic.
+        """
+        log = SimpleNamespace(
+            id=log_id,
+            endpoint_id=1,
+            status=CallStatusEnum.FAILED.value,
+            source_request_headers=None,
+            source_request_payload=None,
+            source_response=None,
+            client_status_code=200,
+            target_request_headers=None,
+            target_request_payload=None,
+            target_query_params=None,
+            target_response=None,
+            response_time_ms=12,
+            upstream_status_code=500,
+            created_at=None,
+        )
+        endpoint = SimpleNamespace(
+            method="POST",
+            source_api_url="https://source.test",
+            target_api_url="https://target.test",
+        )
+        return log, endpoint
+
     async def test_list_logs_paginates_with_total(self):
         db = MagicMock()
         count = Mock()
         count.scalar.return_value = 7
         page = Mock()
-        page.scalars.return_value.all.return_value = [Mock(), Mock()]
+        page.all.return_value = [self._log_row(1), self._log_row(2)]
         results = iter([count, page])
 
         async def execute(_statement):
@@ -227,7 +266,7 @@ class LogServiceTests(unittest.IsolatedAsyncioTestCase):
         count = Mock()
         count.scalar.return_value = 0
         page = Mock()
-        page.scalars.return_value.all.return_value = []
+        page.all.return_value = []
         results = iter([count, page])
 
         async def execute(_statement):

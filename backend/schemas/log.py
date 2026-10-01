@@ -84,9 +84,9 @@ class CallLogResponse(BaseModel):
     full_log: str | None = None
     timeout_configured: int | None = None
 
-    _status_to_text = field_validator(
-        "internal_api_client_status", mode="before"
-    )(_coerce_status)
+    _status_to_text = field_validator("internal_api_client_status", mode="before")(
+        _coerce_status
+    )
 
 
 class CallLogSummary(BaseModel):
@@ -121,9 +121,9 @@ class CallLogSummary(BaseModel):
     external_response: Any | None = None
     external_response_time_ms: int | None = None
 
-    _status_to_text = field_validator(
-        "internal_api_client_status", mode="before"
-    )(_coerce_status)
+    _status_to_text = field_validator("internal_api_client_status", mode="before")(
+        _coerce_status
+    )
 
 
 class CallLogListResponse(PaginatedResponse):

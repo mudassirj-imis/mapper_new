@@ -1,4 +1,5 @@
 """SQLite-backed scheduler configuration and execution history."""
+
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text
@@ -29,9 +30,7 @@ class ScheduledJob(SchedulerBase):
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     cron: Mapped[str | None] = mapped_column(String(255), nullable=True)
     interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True
-    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow

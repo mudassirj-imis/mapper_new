@@ -20,9 +20,6 @@ from pydantic_settings import (
 _RAW_STRING_FIELDS = frozenset(
     {
         "CORS_ORIGINS",
-        "SFTP_PRIVATE_KEY_PATHS",
-        "WEBHOOK_ALLOWED_HOSTS",
-        "WEBHOOK_ALLOWED_CIDRS",
         "SCHEDULER_ALLOWED_HOSTS",
         "SCHEDULER_ALLOWED_CIDRS",
         "UPSTREAM_API_TOKENS",
@@ -63,14 +60,22 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://postgres:postgres@localhost:5432/api_mapper"
     )
 
-    JWT_SECRET: str
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_HOURS: int = 24
-
     ENCRYPTION_KEY: str
+
+    #: Server bootstrap (``python main.py`` / PM2). ``reload`` must stay off in
+    #: production: the reloader respawns the worker on every source change.
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = Field(default=2528, ge=1, le=65535)
+    SERVER_RELOAD: bool = False
 
     CORS_ORIGINS: list[str] = ["*"]
     API_TIMEOUT_SECONDS: int = 60
+
+    #: Connection pool for the shared ``httpx.AsyncClient``. Sized per
+    #: deployment, so it is configuration rather than a module constant.
+    HTTP_MAX_CONNECTIONS: int = Field(default=100, gt=0)
+    HTTP_MAX_KEEPALIVE_CONNECTIONS: int = Field(default=20, ge=0)
+    HTTP_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     # Dedicated SQLite file; never use DATABASE_URL for scheduler state.
     SCHEDULER_DATABASE_PATH: str = "scheduler.db"
     SCHEDULER_TIMEZONE: str = "UTC"
@@ -120,8 +125,10 @@ class Settings(BaseSettings):
             return ""
         return "/" + text.strip("/")
 
-    #AUTH_SERVICE_URL: str | None = None
-    AUTH_BASE_URL: str 
+    AUTH_BASE_URL: str
+    #: AES-256-GCM key for the central auth envelope. ``central_auth`` falls back
+    #: to ``UPSTREAM_AUTH_DECRYPTION_KEY`` when unset, so leaving this blank
+    #: silently reuses the upstream key - set it explicitly per environment.
     AUTH_SERVICE_ENCRYPTION_KEY: str | None = None
 
     UPSTREAM_AUTH_URL: str | None = None
@@ -163,35 +170,20 @@ class Settings(BaseSettings):
     UPSTREAM_API_TOKENS: dict[str, str] = Field(default_factory=dict)
 
     SFTP_KNOWN_HOSTS_FILE: str | None = None
-    SFTP_PRIVATE_KEY_PATHS: list[str] = Field(default_factory=list)
     SFTP_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
     SFTP_LOGIN_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
-    SFTP_OPERATION_TIMEOUT_SECONDS: float = Field(default=20.0, gt=0)
     SFTP_MAX_ENTRIES: int = Field(default=5000, gt=0)
     SFTP_PREVIEW_MAX_BYTES: int = Field(default=1048576, gt=0)
     SFTP_MAX_CONCURRENT: int = Field(default=10, gt=0)
-    SFTP_ADMISSION_TIMEOUT_SECONDS: float = Field(default=1.0, gt=0)
 
-    WEBHOOK_ALLOWED_HOSTS: list[str] = Field(default_factory=list)
-    WEBHOOK_ALLOWED_CIDRS: list[str] = Field(default_factory=list)
-    WEBHOOK_MAX_JOBS: int = Field(default=100, gt=0)
-    WEBHOOK_MAX_CONCURRENT: int = Field(default=10, gt=0)
-    WEBHOOK_MAX_CONNECTIONS: int = Field(default=10, gt=0)
-    WEBHOOK_MAX_KEEPALIVE_CONNECTIONS: int = Field(default=10, ge=0)
     WEBHOOK_DELIVERY_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
-    WEBHOOK_RESPONSE_MAX_BYTES: int = Field(default=65536, gt=0)
+    #: Pause before the single delivery retry, so a flapping receiver is not
+    #: hammered twice back to back.
     WEBHOOK_RETRY_DELAY_SECONDS: float = Field(default=0.25, ge=0)
-    WEBHOOK_SHUTDOWN_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
 
     POLICY_MAX_ENDPOINTS: int = Field(default=10000, gt=0)
-    POLICY_IDLE_TTL_SECONDS: float = Field(default=600.0, gt=0)
-    POLICY_CLEANUP_INTERVAL_SECONDS: float = Field(default=60.0, gt=0)
     DEDUP_TTL_SECONDS: float = Field(default=5.0, gt=0)
     DEDUP_MAX_ENTRIES: int = Field(default=1000, gt=0)
-    DEDUP_MAX_BYTES: int = Field(default=16777216, gt=0)
-    DEDUP_MAX_INFLIGHT: int = Field(default=100, gt=0)
-    DEDUP_MAX_FOLLOWERS: int = Field(default=1000, gt=0)
-    DEDUP_MAX_FOLLOWERS_PER_KEY: int = Field(default=100, gt=0)
 
     RATE_LIMIT_DEFAULT_RPM: int = Field(default=60, ge=0)
     GLOBAL_RATE_LIMIT_RPM: int = Field(default=600, gt=0)
@@ -222,9 +214,6 @@ class Settings(BaseSettings):
 
     @field_validator(
         "CORS_ORIGINS",
-        "SFTP_PRIVATE_KEY_PATHS",
-        "WEBHOOK_ALLOWED_HOSTS",
-        "WEBHOOK_ALLOWED_CIDRS",
         "SCHEDULER_ALLOWED_HOSTS",
         "SCHEDULER_ALLOWED_CIDRS",
         mode="before",

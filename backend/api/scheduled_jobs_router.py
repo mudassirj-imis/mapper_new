@@ -1,4 +1,5 @@
 """Authenticated scheduler configuration and run-history routes."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -158,9 +159,7 @@ async def get_scheduled_job_runs(
     return [_summary(run) for run in runs]
 
 
-@router.get(
-    "/scheduled-runs/{run_id}", response_model=ScheduledJobRunResponse
-)
+@router.get("/scheduled-runs/{run_id}", response_model=ScheduledJobRunResponse)
 async def get_scheduled_run_detail(
     run_id: int,
     db: AsyncSession = Depends(get_scheduler_db),

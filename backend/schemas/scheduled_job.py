@@ -1,4 +1,5 @@
 """Pydantic contracts for recurring HTTP requests."""
+
 from __future__ import annotations
 
 import re
@@ -7,8 +8,14 @@ from typing import Annotated
 from uuid import uuid4
 
 from pydantic import (
-    AfterValidator, BaseModel, ConfigDict, Field, HttpUrl, TypeAdapter,
-    field_validator, model_validator,
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    TypeAdapter,
+    field_validator,
+    model_validator,
 )
 
 from backend.core.config import settings
@@ -89,7 +96,9 @@ def _validate_body(value: object) -> str | None:
 
 
 ScheduledJobUrl = Annotated[str, Field(max_length=2083), AfterValidator(_validate_url)]
-ScheduledJobHeaders = Annotated[dict[str, str] | None, AfterValidator(_validate_headers)]
+ScheduledJobHeaders = Annotated[
+    dict[str, str] | None, AfterValidator(_validate_headers)
+]
 ScheduledJobBody = Annotated[str | None, AfterValidator(_validate_body)]
 
 

@@ -85,9 +85,7 @@ def _collection() -> Any:
             return None
 
     try:
-        return _client[settings.AUDIT_MONGO_DATABASE][
-            settings.AUDIT_MONGO_COLLECTION
-        ]
+        return _client[settings.AUDIT_MONGO_DATABASE][settings.AUDIT_MONGO_COLLECTION]
     except Exception:
         logger.warning("Audit enrichment disabled: MongoDB unreachable", exc_info=True)
         _client_failed = True

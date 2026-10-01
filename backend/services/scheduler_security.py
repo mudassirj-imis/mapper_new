@@ -1,4 +1,5 @@
 """Destination validation for scheduled HTTP requests."""
+
 from __future__ import annotations
 
 import asyncio
@@ -87,12 +88,12 @@ def validate_destination(url: str) -> tuple[str, ...] | None:
     except ValueError:
         try:
             port = port or (443 if parsed.scheme.lower() == "https" else 80)
-            addresses = socket.getaddrinfo(
-                host, port, type=socket.SOCK_STREAM
-            )
+            addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
             resolved = {ipaddress.ip_address(item[4][0]) for item in addresses}
         except (OSError, TypeError, ValueError) as exc:
-            raise UnsafeDestinationError("Destination host could not be resolved") from exc
+            raise UnsafeDestinationError(
+                "Destination host could not be resolved"
+            ) from exc
         if not resolved:
             raise UnsafeDestinationError("Destination host could not be resolved")
     else:

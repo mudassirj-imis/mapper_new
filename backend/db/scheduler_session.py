@@ -1,4 +1,5 @@
 """Async session for the dedicated scheduler SQLite database."""
+
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -67,7 +68,11 @@ def _add_missing_scheduler_columns(connection) -> None:
 
 
 async def create_scheduler_tables() -> None:
-    from backend.models.scheduled_job import ScheduledJob, ScheduledJobRun, SchedulerBase
+    from backend.models.scheduled_job import (
+        ScheduledJob,
+        ScheduledJobRun,
+        SchedulerBase,
+    )
 
     _scheduler_path.parent.mkdir(parents=True, exist_ok=True)
     try:

@@ -170,7 +170,7 @@ class InternalVsExternalResponseTests(unittest.TestCase):
     def test_neither_field_is_null(self):
         for overrides in (
             {},
-            {"data": None},                      # 204 no content
+            {"data": None},  # 204 no content
             {"success": False, "error": "boom"},  # upstream failure
         ):
             internal, external = self._both(**overrides)
@@ -308,7 +308,11 @@ class AuditEnrichmentTests(unittest.TestCase):
 
     def test_project_drops_blank_fields(self):
         projected = audit_enrichment._project(
-            {"external_query_params": {}, "full_log": "   ", "external_response": {"a": 1}}
+            {
+                "external_query_params": {},
+                "full_log": "   ",
+                "external_response": {"a": 1},
+            }
         )
         self.assertNotIn("external_query_params", projected)
         self.assertNotIn("full_log", projected)
@@ -318,7 +322,8 @@ class AuditEnrichmentTests(unittest.TestCase):
         """Every mapped target must exist on the API schema, or it is dropped."""
         declared = set(CallLogResponse.model_fields)
         unknown = sorted(
-            target for target in audit_enrichment.MONGO_FIELD_MAP.values()
+            target
+            for target in audit_enrichment.MONGO_FIELD_MAP.values()
             if target not in declared
         )
         self.assertEqual(unknown, [], f"mapped fields absent from schema: {unknown}")

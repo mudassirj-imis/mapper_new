@@ -20,7 +20,7 @@ class CentralAuthProtocolTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.settings_patch = patch.multiple(
             central_auth.settings,
-            AUTH_SERVICE_URL="https://central.test/auth",
+            AUTH_BASE_URL="https://central.test/auth",
             AUTH_SERVICE_ENCRYPTION_KEY=_KEY,
         )
         self.settings_patch.start()

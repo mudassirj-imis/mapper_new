@@ -5,7 +5,6 @@ are picked up:
 
     uvicorn backend.main:app --reload
 """
-import os
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
@@ -106,10 +105,13 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 2528))
+
+    # SERVER_HOST / SERVER_PORT / SERVER_RELOAD come from the environment (see
+    # .env). Reload defaults to False because the reloader respawns the worker
+    # on every source change, which is unsafe in production.
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=True,
+        host=settings.SERVER_HOST,
+        port=int(settings.SERVER_PORT),
+        reload=bool(settings.SERVER_RELOAD),
     )

@@ -3,6 +3,7 @@
 Each test runs the scheduler in a child process with a temporary SQLite path,
 so the repository's real ``.env`` and application database are never touched.
 """
+
 import os
 import subprocess
 import sys
@@ -108,7 +109,7 @@ class SchedulerIntegrationTests(unittest.TestCase):
     def test_scheduler_uses_temporary_sqlite_and_persists_runs(self):
         run_isolated("")
 
-    def test_scheduler_payload_validation(self):
+    def test_scheduler_payload_validation_rejects_invalid_inputs(self):
         run_isolated(
             """
             from pydantic import ValidationError
@@ -139,7 +140,7 @@ class SchedulerIntegrationTests(unittest.TestCase):
             """
         )
 
-    def test_scheduler_payload_validation(self):
+    def test_scheduler_payload_validation_normalisation(self):
         run_isolated(
             """
             from pydantic import ValidationError

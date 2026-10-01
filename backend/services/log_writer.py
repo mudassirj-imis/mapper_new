@@ -137,7 +137,9 @@ def _client_response(log_data: dict[str, Any]) -> dict[str, Any]:
     status_code = log_data.get("status_code")
 
     if log_data.get("success"):
-        message = data.get("message", "Success") if isinstance(data, dict) else "Success"
+        message = (
+            data.get("message", "Success") if isinstance(data, dict) else "Success"
+        )
         # Fall back to the whole body when the upstream is not ``data``-shaped,
         # so nothing is dropped for APIs that return a bare payload.
         payload = data.get("data", data) if isinstance(data, dict) else data
@@ -186,9 +188,7 @@ async def write_call_log(
                 or log_data.get("internal_response_headers")
             ),
             target_request_headers=_headers(log_data.get("external_request_headers")),
-            target_response_headers=_headers(
-                log_data.get("external_response_headers")
-            ),
+            target_response_headers=_headers(log_data.get("external_response_headers")),
             # The query string the gateway actually dialled. The engine
             # rebuilds it on the final request URL, so it also covers params
             # already present on the target URL, not just mapped ones.

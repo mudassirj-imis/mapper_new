@@ -47,9 +47,7 @@ async def ensure_columns() -> list[str]:
             inspector = inspect(sync_connection)
             if not inspector.has_table(_TABLE):
                 return []
-            existing = {
-                column["name"] for column in inspector.get_columns(_TABLE)
-            }
+            existing = {column["name"] for column in inspector.get_columns(_TABLE)}
             added: list[str] = []
             for column, ddl_type in ADDED_COLUMNS:
                 if column in existing:

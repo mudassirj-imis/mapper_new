@@ -1,4 +1,5 @@
 """Scheduler lifecycle, execution, and run-history queries."""
+
 from __future__ import annotations
 
 import asyncio
@@ -189,7 +190,9 @@ async def reconcile_jobs() -> None:
     previous_jobs = list(scheduler.get_jobs())
     async with SchedulerSessionLocal() as db:
         try:
-            result = await db.execute(select(ScheduledJob).where(ScheduledJob.enabled.is_(True)))
+            result = await db.execute(
+                select(ScheduledJob).where(ScheduledJob.enabled.is_(True))
+            )
             rows = list(result.scalars().all())
             configured = set()
             for row in rows:
@@ -213,7 +216,9 @@ async def reconcile_jobs() -> None:
             try:
                 _restore_scheduler_jobs(previous_jobs)
             except Exception:
-                logger.exception("Could not restore scheduler state after reconciliation failure")
+                logger.exception(
+                    "Could not restore scheduler state after reconciliation failure"
+                )
             raise
 
 
@@ -255,7 +260,9 @@ async def create_job(
 
 
 async def list_jobs(db: AsyncSession) -> list[ScheduledJob]:
-    result = await db.execute(select(ScheduledJob).order_by(ScheduledJob.created_at.desc()))
+    result = await db.execute(
+        select(ScheduledJob).order_by(ScheduledJob.created_at.desc())
+    )
     return list(result.scalars().all())
 
 
@@ -269,7 +276,9 @@ async def get_latest_run(db: AsyncSession, job_id: str) -> ScheduledJobRun | Non
     return result.scalar_one_or_none()
 
 
-async def get_runs(db: AsyncSession, job_id: str, limit: int = 50) -> list[ScheduledJobRun]:
+async def get_runs(
+    db: AsyncSession, job_id: str, limit: int = 50
+) -> list[ScheduledJobRun]:
     result = await db.execute(
         select(ScheduledJobRun)
         .where(ScheduledJobRun.job_id == job_id)
@@ -486,4 +495,3 @@ async def run_job_now(db: AsyncSession, job_id: str) -> ScheduledJobRun:
     if row is None:
         raise SchedulerNotFoundError("Scheduled job not found")
     return await execute_scheduled_job(row.job_id, row.url, row.method)
-

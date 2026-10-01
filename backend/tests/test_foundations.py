@@ -658,7 +658,11 @@ class SchemaAndConfigTests(unittest.TestCase):
     def make_settings(self, **kwargs):
         with patch.dict(os.environ, {}, clear=True):
             return Settings(
-                _env_file=None, JWT_SECRET="test", ENCRYPTION_KEY="test", **kwargs
+                _env_file=None,
+                JWT_SECRET="test",
+                ENCRYPTION_KEY="test",
+                AUTH_BASE_URL="https://auth.test",
+                **kwargs,
             )
 
     def test_settings_disable_dotenv_and_have_bounded_defaults(self):
@@ -693,7 +697,10 @@ class SchemaAndConfigTests(unittest.TestCase):
         }
         with patch.dict(os.environ, environment, clear=True):
             settings = Settings(
-                _env_file=None, JWT_SECRET="test", ENCRYPTION_KEY="test"
+                _env_file=None,
+                JWT_SECRET="test",
+                ENCRYPTION_KEY="test",
+                AUTH_BASE_URL="https://auth.test",
             )
         self.assertEqual(
             settings.WEBHOOK_ALLOWED_HOSTS, ["receiver.test", "other.test"]
