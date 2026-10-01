@@ -87,6 +87,21 @@ class Settings(BaseSettings):
     SCHEDULER_MAX_RESPONSE_BODY_BYTES: int = Field(default=65536, gt=0)
     SCHEDULER_MAX_HEADERS: int = Field(default=32, gt=0)
 
+    AUDIT_MONGO_ENABLED: bool = True
+    #: The legacy gateway (``mapper-engine``) writes a compact MySQL row *and* a
+    #: full-detail MongoDB document for every call. The MySQL row carries no
+    #: headers, query string or captured log, so the detail blocks in the UI
+    #: render empty unless we look the document up. Disable to serve MySQL only.
+    AUDIT_MONGO_URI: str = "mongodb://localhost:27017/"
+    AUDIT_MONGO_DATABASE: str = "gateway_logs_db"
+    AUDIT_MONGO_COLLECTION: str = "api_gateway_logs"
+    #: How far either side of a row's ``created_at`` to look for its document.
+    #: Both records are written by the same in-process call, so they land within
+    #: milliseconds; the slack only absorbs clock jitter and slow inserts.
+    AUDIT_MATCH_WINDOW_SECONDS: float = Field(default=5.0, gt=0)
+    #: Mongo must never add latency to the log views; fail fast, not slow.
+    AUDIT_MONGO_TIMEOUT_MS: int = Field(default=1500, gt=0)
+
     APP_ROOT_PATH: str = ""
 
     @field_validator("APP_ROOT_PATH", mode="before")

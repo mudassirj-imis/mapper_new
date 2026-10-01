@@ -102,6 +102,15 @@ class ApiCallLog(Base):
         nullable=True,
     )
 
+    #: Query string actually sent upstream. Separate from
+    #: ``target_request_headers`` because it is derived from the built
+    #: request URL, not from the caller's header block.
+    target_query_params: Mapped[dict[str, Any] | None] = mapped_column(
+        "target_query_params",
+        JSON,
+        nullable=True,
+    )
+
     #: HTTP status returned to the client, and the upstream's, kept apart so a
     #: gateway-side 200 is distinguishable from an upstream 200.
     client_status_code: Mapped[int | None] = mapped_column(

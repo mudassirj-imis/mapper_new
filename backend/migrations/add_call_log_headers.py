@@ -30,6 +30,7 @@ ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("source_response_headers", "JSON"),
     ("target_request_headers", "JSON"),
     ("target_response_headers", "JSON"),
+    ("target_query_params", "JSON"),
     ("client_status_code", "INT"),
     ("upstream_status_code", "INT"),
 )

@@ -888,11 +888,6 @@ export default function LogDetail({ logId }) {
 				subtitle="upstream → gateway"
 				icon={<SouthWest />}
 				accent={theme.palette.success.main}
-				badge={
-					<CountBadge>
-						{headerCount(detail.external_response_headers)} headers
-					</CountBadge>
-				}
 			>
 				<Box
 					sx={{
@@ -937,13 +932,6 @@ export default function LogDetail({ logId }) {
 						upstream round trip
 					</Typography>
 				</Box>
-
-				<BlockLabel>External Response Headers</BlockLabel>
-				<KeyValueTable
-					map={detail.external_response_headers}
-					nameLabel="Header Name"
-					emptyText="No external response headers were captured."
-				/>
 
 				<BlockLabel>External Response Body</BlockLabel>
 				<JsonBlock

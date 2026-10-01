@@ -100,29 +100,63 @@ def _headers(source: Any) -> dict[str, Any] | None:
     return {str(key): str(value) for key, value in redact(dict(source)).items()}
 
 
-def _client_response(log_data: dict[str, Any]) -> dict[str, Any]:
-    """Build a response payload from the gateway result.
+def _query_params(source: Any) -> dict[str, Any] | None:
+    """Normalise a captured query mapping to a plain, redacted dict.
 
-    ``resCode``/``status_code`` sit alongside ``data`` -- never inside it -- so
-    the stored envelope keeps mirroring the payload the client received.
+    Unlike :func:`_headers` this keeps repeated parameters readable: httpx
+    models a key sent more than once as a list, which ``str()`` would render
+    as ``['a', 'b']``. Those are joined here instead, so the audit view shows
+    one row per parameter name.
+    """
+    if not isinstance(source, dict) or not source:
+        return None
+
+    flattened: dict[str, Any] = {}
+    for key, value in redact(dict(source)).items():
+        if isinstance(value, (list, tuple)):
+            flattened[str(key)] = ", ".join(str(item) for item in value)
+        else:
+            flattened[str(key)] = str(value)
+
+    return flattened
+
+
+def _client_response(log_data: dict[str, Any]) -> dict[str, Any]:
+    """Build the gateway's own response envelope for the client.
+
+    This is deliberately *not* the upstream body -- that is stored separately
+    in ``external_response``. Mirroring the legacy engine, the envelope is
+    assembled here: the status codes, the message, and the payload under
+    ``data``. Keeping the two apart means a passthrough call still records
+    the upstream envelope verbatim in ``external_response``, while
+    ``internal_api_client_response`` stays the shape the client was served.
+
+    ``resCode``/``status_code`` sit alongside ``data`` -- never inside it.
     """
     data = log_data.get("data")
     status_code = log_data.get("status_code")
 
     if log_data.get("success"):
-        body = dict(data) if isinstance(data, dict) else {"data": data}
-    else:
-        body = {
-            "success": False,
-            "error": log_data.get("error"),
+        message = data.get("message", "Success") if isinstance(data, dict) else "Success"
+        # Fall back to the whole body when the upstream is not ``data``-shaped,
+        # so nothing is dropped for APIs that return a bare payload.
+        payload = data.get("data", data) if isinstance(data, dict) else data
+        return {
+            "success": True,
+            "message": message,
+            "resCode": status_code,
+            "data": {} if payload is None else payload,
             "status_code": status_code,
         }
 
-    # Added last so neither can be clobbered by an upstream key of the same
-    # name, and both stay outside ``data``.
-    body["resCode"] = status_code
-    body["status_code"] = status_code
-    return body
+    return {
+        "success": False,
+        "error": log_data.get("error"),
+        "message": log_data.get("error"),
+        "resCode": status_code,
+        "data": None,
+        "status_code": status_code,
+    }
 
 
 async def write_call_log(
@@ -155,6 +189,10 @@ async def write_call_log(
             target_response_headers=_headers(
                 log_data.get("external_response_headers")
             ),
+            # The query string the gateway actually dialled. The engine
+            # rebuilds it on the final request URL, so it also covers params
+            # already present on the target URL, not just mapped ones.
+            target_query_params=_query_params(log_data.get("external_query_params")),
             client_status_code=log_data.get("status_code"),
             upstream_status_code=log_data.get("external_status_code"),
             source_request_payload=redact(
@@ -164,11 +202,10 @@ async def write_call_log(
             ),
             source_response=_client_response(log_data),
             target_request_payload=redact(log_data.get("external_request_body") or {}),
-            target_response=(
-                redact(log_data.get("data"))
-                if log_data.get("data") is not None
-                else None
-            ),
+            # The raw upstream body, kept separately from the gateway envelope
+            # above. Stored as ``{}`` rather than NULL so the audit trail never
+            # has to distinguish "no upstream body" from "not recorded".
+            target_response=redact(log_data.get("data") or {}),
             status=status,
             response_time_ms=(
                 log_data.get("external_response_time_ms")

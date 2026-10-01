@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -9,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import ApiCallLog, ApiEndpoint, CallStatusEnum
 from backend.schemas.log import CallLogSummary, CallLogResponse
+from backend.services import audit_enrichment
 from backend.services.log_writer import redact
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["get_log", "list_logs"]
 
@@ -167,9 +171,8 @@ async def list_logs(
             external_request_method=endpoint.method,
             external_request_headers=redact(log.target_request_headers),
             external_request_body=redact(log.target_request_payload),
-            external_query_params=None,
+            external_query_params=redact(log.target_query_params),
             external_response=redact(log.target_response),
-            external_response_headers=redact(log.target_response_headers),
             external_response_time_ms=log.response_time_ms,
             external_status_code=log.upstream_status_code,
             total_time_ms=log.response_time_ms,
@@ -177,6 +180,23 @@ async def list_logs(
         )
         for log, endpoint in rows
     ]
+
+    # Rows the legacy gateway wrote carry no headers or query string in MySQL;
+    # the detail lives in MongoDB. One range query covers the whole page.
+    supplements = audit_enrichment.enrich_rows(
+        [(log.id, log.created_at) for log, _ in rows],
+        CallLogSummary.model_fields,
+    )
+
+    if supplements:
+        for item in items:
+            supplement = supplements.get(item.id)
+            if supplement:
+                for field, value in audit_enrichment.apply(
+                    item.model_dump(), supplement
+                ).items():
+                    if field in item.model_fields:
+                        setattr(item, field, value)
 
     return total, items, page, per_page
 
@@ -208,39 +228,67 @@ async def get_log(
 
     log, endpoint = row
 
-    return CallLogResponse(
-        id=log.id,
-        endpoint_id=log.endpoint_id,
-        request_id=str(log.id),
-        method=endpoint.method,
-        path=endpoint.source_api_url,
-        status=log.status,
-        error_message=log.error_message,
-        overall_status=(
-            True
-            if log.status == "SUCCESS"
-            else False
-            if log.status is not None
-            else None
+    return _enrich(
+        CallLogResponse(
+            id=log.id,
+            endpoint_id=log.endpoint_id,
+            request_id=str(log.id),
+            method=endpoint.method,
+            path=endpoint.source_api_url,
+            status=log.status,
+            error_message=log.error_message,
+            overall_status=(
+                True
+                if log.status == "SUCCESS"
+                else False
+                if log.status is not None
+                else None
+            ),
+            # Re-redacted on read as well as on write, so rows written before
+            # masking existed never expose a plaintext credential.
+            internal_request_headers=redact(log.source_request_headers),
+            internal_request_body=redact(log.source_request_payload),
+            internal_api_client_response=redact(log.source_response),
+            internal_api_client_status=log.client_status_code,
+            external_request_url=endpoint.target_api_url,
+            external_request_method=endpoint.method,
+            external_request_headers=redact(log.target_request_headers),
+            external_request_body=redact(log.target_request_payload),
+            external_query_params=redact(log.target_query_params),
+            external_response=redact(log.target_response),
+            external_response_time_ms=log.response_time_ms,
+            total_time_ms=log.response_time_ms,
+            external_status_code=log.upstream_status_code,
+            full_log=None,
+            timeout_configured=None,
+            tenant_id=None,
+            created_at=log.created_at,
         ),
-        # Re-redacted on read as well as on write, so rows written before
-        # masking existed never expose a plaintext credential.
-        internal_request_headers=redact(log.source_request_headers),
-        internal_request_body=redact(log.source_request_payload),
-        internal_api_client_response=redact(log.source_response),
-        internal_api_client_status=log.client_status_code,
-        external_request_url=endpoint.target_api_url,
-        external_request_method=endpoint.method,
-        external_request_headers=redact(log.target_request_headers),
-        external_request_body=redact(log.target_request_payload),
-        external_query_params=None,
-        external_response=redact(log.target_response),
-        external_response_headers=redact(log.target_response_headers),
-        external_response_time_ms=log.response_time_ms,
-        total_time_ms=log.response_time_ms,
-        external_status_code=log.upstream_status_code,
-        full_log=None,
-        timeout_configured=None,
-        tenant_id=None,
-        created_at=log.created_at,
+        log.created_at,
     )
+
+
+def _enrich(record: CallLogResponse, created_at: datetime | None) -> CallLogResponse:
+    """Fill a record's empty fields from its MongoDB audit document.
+
+    In place, and never overwriting: MySQL remains the authority for anything
+    it already recorded. MongoDB only supplies what the legacy gateway left
+    out -- headers, the query string, and the captured console log.
+    """
+    try:
+        supplements = audit_enrichment.enrich_rows(
+            [(record.id, created_at)], CallLogResponse.model_fields
+        )
+        supplement = supplements.get(record.id)
+        if not supplement:
+            return record
+
+        for field, value in audit_enrichment.apply(
+            record.model_dump(), supplement
+        ).items():
+            if field in type(record).model_fields:
+                setattr(record, field, value)
+    except Exception:  # enrichment must never break the detail view
+        logger.warning("Call log enrichment failed for %s", record.id, exc_info=True)
+
+    return record

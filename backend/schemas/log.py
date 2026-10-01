@@ -54,6 +54,10 @@ class CallLogResponse(BaseModel):
 
     request_id: str | None = None
     method: str | None = None
+    #: Client-facing path this call was made against. Declared here because
+    #: ``log_service.get_log`` passes it and the detail view renders it; an
+    #: undeclared field would be dropped by ``response_model`` serialisation.
+    path: str | None = None
 
     overall_status: bool | None = None
     tenant_id: str | None = None
@@ -75,7 +79,6 @@ class CallLogResponse(BaseModel):
     external_request_body: dict[str, Any] | None = None
     external_query_params: dict[str, Any] | None = None
     external_response: Any | None = None
-    external_response_headers: dict[str, Any] | None = None
     external_response_time_ms: int | None = None
 
     full_log: str | None = None
@@ -116,7 +119,6 @@ class CallLogSummary(BaseModel):
     external_request_body: dict[str, Any] | None = None
     external_query_params: dict[str, Any] | None = None
     external_response: Any | None = None
-    external_response_headers: dict[str, Any] | None = None
     external_response_time_ms: int | None = None
 
     _status_to_text = field_validator(
