@@ -1,15 +1,3 @@
-"""In-memory rate limiter with a per-key sliding-window token bucket.
-
-Tracks caller timestamps per key (``endpoint_id`` for the gateway path, a
-``client:host`` key for the global middleware) in deques and only admits a new
-request when the number of requests inside the trailing window is below the
-configured ``rpm``. The window is a fixed 60 seconds by default.
-
-State lives in memory for the lifetime of the process (reset on restart) — no
-external store, no persistence. A simple ``asyncio.Lock`` serialises access so
-the counters stay correct under concurrency.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -27,7 +15,7 @@ class RateLimitDecision:
     """Outcome of a rate-limit check."""
 
     allowed: bool
-    retry_after: int = 0  # seconds until the oldest token in the window expires
+    retry_after: int = 0
 
 
 class RateLimiter:
@@ -39,12 +27,7 @@ class RateLimiter:
         self._lock = asyncio.Lock()
 
     async def check(self, key: str, rpm: int | None) -> RateLimitDecision:
-        """Allow/deny one request for ``key`` under the ``rpm`` budget.
 
-        ``rpm`` follows the ``api_endpoints.rate_limit_rpm`` convention: value
-        ``0`` blocks every request, a negative/None value falls back to the
-        configured default RPM.
-        """
         if rpm is None or rpm < 0:
             rpm = settings.RATE_LIMIT_DEFAULT_RPM
         if rpm <= 0:

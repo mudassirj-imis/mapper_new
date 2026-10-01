@@ -1,12 +1,3 @@
-"""Webhook subscription persistence + fire-and-forget delivery.
-
-CRUD helpers back the webhook router. :func:`fire_event` performs an async
-POST to every enabled subscription (global and endpoint-scoped) whose event list
-contains the fired event, retrying each delivery once on failure. Delivery never
-raises into its caller — a webhook problem is logged, never surfaced as an API
-error.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -122,9 +113,6 @@ async def delete_webhook(db: AsyncSession, webhook_id) -> bool:
     await db.delete(row)
     await db.commit()
     return True
-
-
-# ---------------------------------------------------------------------------
 
 
 async def fire_event(

@@ -24,9 +24,9 @@ class ScheduledJob(SchedulerBase):
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     method: Mapped[str] = mapped_column(String(16), nullable=False, default="GET")
-    #: JSON object of user supplied request headers; ``None`` when none were set.
+
     headers: Mapped[str | None] = mapped_column(Text, nullable=True)
-    #: Raw request body sent with methods that allow one (POST/PUT/PATCH/...).
+
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     cron: Mapped[str | None] = mapped_column(String(255), nullable=True)
     interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -50,17 +50,17 @@ class ScheduledJobRun(SchedulerBase):
     job_id: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     method: Mapped[str] = mapped_column(String(16), nullable=False)
-    #: JSON object of the headers actually put on the wire.
+
     request_headers: Mapped[str | None] = mapped_column(Text, nullable=True)
-    #: JSON object of the response headers.
+
     response_headers: Mapped[str | None] = mapped_column(Text, nullable=True)
-    #: Decoded response payload, truncated to SCHEDULER_MAX_RESPONSE_BODY_BYTES.
+
     response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
-    #: True when the stored response body was cut short by that limit.
+
     response_body_truncated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
-    #: Size in bytes of the captured body, so the UI can show a size when empty.
+
     response_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

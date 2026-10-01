@@ -1,5 +1,3 @@
-"""Async session for the dedicated scheduler SQLite database."""
-
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -36,9 +34,6 @@ async def get_scheduler_db() -> AsyncGenerator[AsyncSession, None]:
             raise
 
 
-# Columns added after the first release. ``create_all`` never alters an existing
-# table, so the scheduler database is upgraded in place with ``ADD COLUMN``,
-# which SQLite supports for the simple, nullable case each one is.
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("scheduled_jobs", "headers", "TEXT"),
     ("scheduled_jobs", "body", "TEXT"),
@@ -63,7 +58,7 @@ def _add_missing_scheduler_columns(connection) -> None:
         if column in {item["name"] for item in inspector.get_columns(table)}:
             continue
         connection.exec_driver_sql(
-            f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"  # noqa: S608
+            f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"
         )
 
 

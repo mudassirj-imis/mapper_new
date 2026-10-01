@@ -5,6 +5,7 @@ are picked up:
 
     uvicorn backend.main:app --reload
 """
+
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
@@ -16,9 +17,6 @@ from backend.db import schema_probe as audit_schema
 from backend.services.http_client import create_http_client
 from backend.services.scheduler_service import start_scheduler, stop_scheduler
 
-
-#   health_router, logs_router (Task 8), sftp_router, export_import_router,
-#   mock_router, webhook_router (Task 7) — with Task 6 resilience wired into
 
 from backend.api.auth import router as auth_router
 from backend.api.endpoints_router import router as endpoints_router
@@ -46,9 +44,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     app.state.http_client = create_http_client()
     try:
-        # Learn which audit columns this database actually has before the first
-        # request needs them, so a schema the service account cannot migrate
-        # degrades to a MongoDB-backed detail view instead of MySQL error 1054.
         await audit_schema.warm()
         await start_scheduler(app.state.http_client)
         yield
@@ -63,7 +58,6 @@ def create_app() -> FastAPI:
         title="API Mapper & Gateway",
         version="1.0.0",
         lifespan=lifespan,
-        # /mapper-new prefix, so the generated spec and OAuth2-redirect URLs
         root_path=settings.APP_ROOT_PATH,
     )
 
@@ -111,9 +105,6 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
-    # SERVER_HOST / SERVER_PORT / SERVER_RELOAD come from the environment (see
-    # .env). Reload defaults to False because the reloader respawns the worker
-    # on every source change, which is unsafe in production.
     uvicorn.run(
         "main:app",
         host=settings.SERVER_HOST,

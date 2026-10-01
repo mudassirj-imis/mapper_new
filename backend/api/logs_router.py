@@ -1,10 +1,3 @@
-"""Call-log querying routes.
-
-``GET /api/call-logs`` returns a paginated summary list; ``GET /api/call-logs/{id}``
-returns the full audit record including every request/response header and body.
-Both require an authenticated, active user.
-"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status

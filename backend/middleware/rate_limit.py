@@ -1,12 +1,3 @@
-"""Global rate-limit middleware for the ``/api`` surface.
-
-Complements the per-endpoint limiter applied to the gateway engine: this is a
-coarse per-client-IP guard with a generous default budget, so a single noisy
-client cannot monopolise the whole service while legitimate per-endpoint
-budgets still govern individual mappings. Returns ``429`` with a ``Retry-After``
-header when the budget is exceeded.
-"""
-
 from __future__ import annotations
 
 from typing import Callable

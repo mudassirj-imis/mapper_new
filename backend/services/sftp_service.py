@@ -1,13 +1,3 @@
-"""Async SFTP operations via AsyncSSH.
-
-Supports endpoint-stored (encrypted) credentials with per-request overrides:
-when ``endpoint_id`` is supplied the stored host/port/user/password/private key
-are resolved (and decrypted by the endpoint service) and any field sent by the
-caller wins. All operations share a concurrency limiter and use the SFTP timeouts
-from configuration. Host verification follows the config: the ``known_hosts``
-argument is omitted (AsyncSSH default trust files), never passed as ``None``.
-"""
-
 from __future__ import annotations
 
 import asyncio

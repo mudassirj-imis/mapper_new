@@ -1,10 +1,3 @@
-"""
-Tests for the centralized SSPA/IMIS authentication protocol.
-
-All HTTP traffic is mocked; these tests never contact the live auth service or
-read real credentials.
-"""
-
 import json
 import unittest
 from unittest.mock import patch

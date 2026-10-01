@@ -1,9 +1,3 @@
-"""Isolated scheduler tests.
-
-Each test runs the scheduler in a child process with a temporary SQLite path,
-so the repository's real ``.env`` and application database are never touched.
-"""
-
 import os
 import subprocess
 import sys

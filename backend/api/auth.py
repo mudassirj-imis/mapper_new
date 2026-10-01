@@ -1,10 +1,3 @@
-"""Authentication BFF routes backed by the centralized SSPA/IMIS service.
-
-The frontend keeps its existing plain-JSON contract, while this backend owns
-all centralized-auth protocol details (pre-auth token, AES-GCM encryption,
-decryption, refresh, validation, and logout).
-"""
-
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials

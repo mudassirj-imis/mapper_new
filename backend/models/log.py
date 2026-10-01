@@ -1,9 +1,3 @@
-"""Model for the ``api_call_log`` table.
-
-Stores the audit trail for requests proxied through the API gateway.
-This model matches the existing MySQL ``api_call_log`` table.
-"""
-
 from datetime import datetime
 from typing import Any
 
@@ -76,8 +70,6 @@ class ApiCallLog(Base):
         nullable=True,
     )
 
-    #: Header audit trail. The gateway already captures both sides of the
-    #: exchange; these columns persist it so the log view can show it.
     source_request_headers: Mapped[dict[str, Any] | None] = mapped_column(
         "source_request_headers",
         JSON,
@@ -102,17 +94,12 @@ class ApiCallLog(Base):
         nullable=True,
     )
 
-    #: Query string actually sent upstream. Separate from
-    #: ``target_request_headers`` because it is derived from the built
-    #: request URL, not from the caller's header block.
     target_query_params: Mapped[dict[str, Any] | None] = mapped_column(
         "target_query_params",
         JSON,
         nullable=True,
     )
 
-    #: HTTP status returned to the client, and the upstream's, kept apart so a
-    #: gateway-side 200 is distinguishable from an upstream 200.
     client_status_code: Mapped[int | None] = mapped_column(
         "client_status_code",
         Integer,

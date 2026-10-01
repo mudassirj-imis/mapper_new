@@ -1,11 +1,3 @@
-"""Shared FastAPI dependencies for the centralized authentication service.
-
-The mapper is a backend-for-frontend for the SSPA/IMIS auth service.  It does
-not mint or validate its own JWTs: incoming bearer tokens are validated by
-calling the central ``/auth/auth1/permissions`` endpoint, and the resulting
-identity is passed to the existing application routes.
-"""
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -27,7 +19,6 @@ __all__ = [
     "require_roles",
 ]
 
-# auto_error=False lets this module return a consistent 401 response for both
 
 bearer_scheme = HTTPBearer(
     auto_error=False,

@@ -1,11 +1,3 @@
-"""Mock-response short circuit for the gateway.
-
-When an endpoint has ``mock_enabled=true`` the gateway returns its stored
-``mock_response`` directly instead of calling the upstream — sub-millisecond and
-with no network I/O. The built result mirrors the gateway's audit envelope so
-the router, response viewer and call-log writer all keep working unchanged.
-"""
-
 from __future__ import annotations
 
 from typing import Any

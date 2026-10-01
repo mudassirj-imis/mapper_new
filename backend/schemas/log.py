@@ -1,5 +1,3 @@
-"""Call log schemas — full audit view plus a trimmed list summary."""
-
 from datetime import datetime
 from typing import Any
 
@@ -9,11 +7,7 @@ from backend.schemas.common import PaginatedResponse
 
 
 def _coerce_status(value: Any) -> str | None:
-    """Render ``internal_api_client_status`` as text, whatever it holds.
 
-    The column is free-text for historical rows and an integer status code for
-    new ones; the field stays a string so existing consumers are unaffected.
-    """
     if value is None:
         return None
     if isinstance(value, str):
@@ -22,26 +16,6 @@ def _coerce_status(value: Any) -> str | None:
 
 
 class CallLogResponse(BaseModel):
-    """Complete stored call log.
-
-    The response deliberately carries two views of the same record:
-
-    * the raw stored columns (``source_*`` / ``target_*``) for API consumers
-      that read the table directly, and
-    * the frontend audit contract (``internal_*`` / ``external_*``, ``method``,
-      ``path``, ``overall_status`` …) which mirrors :class:`CallLogSummary`.
-
-    ``log_service.get_log`` populates the second set from the first with the
-    endpoint join. Every one of those fields must stay declared here: FastAPI
-    serialises through ``response_model``, so an undeclared field is silently
-    dropped from the payload and the detail view renders empty.
-
-    ``validate_assignment`` is required because the MongoDB enrichment merges
-    with ``setattr`` after construction, which bypasses ``mode="before"``
-    validators -- an integer status code from a document would otherwise be
-    left in a ``str`` field and serialised with a pydantic warning.
-    """
-
     model_config = ConfigDict(from_attributes=True, validate_assignment=True)
 
     id: int
@@ -59,9 +33,7 @@ class CallLogResponse(BaseModel):
 
     request_id: str | None = None
     method: str | None = None
-    #: Client-facing path this call was made against. Declared here because
-    #: ``log_service.get_log`` passes it and the detail view renders it; an
-    #: undeclared field would be dropped by ``response_model`` serialisation.
+
     path: str | None = None
 
     overall_status: bool | None = None
@@ -73,9 +45,7 @@ class CallLogResponse(BaseModel):
     internal_request_headers: dict[str, Any] | None = None
     internal_request_body: dict[str, Any] | None = None
     internal_api_client_response: dict[str, Any] | None = None
-    #: Historically free-text; now also carries the HTTP status returned to
-    #: the client, so both forms are accepted and the value is stringified so
-    #: existing consumers keep working.
+
     internal_api_client_status: str | None = None
 
     external_request_url: str | None = None
@@ -97,8 +67,6 @@ class CallLogResponse(BaseModel):
 class CallLogSummary(BaseModel):
     """Trimmed log row for list views."""
 
-    # ``validate_assignment`` for the same reason as ``CallLogResponse``: the
-    # enrichment merge assigns onto an already-built instance.
     model_config = ConfigDict(from_attributes=True, validate_assignment=True)
 
     id: int

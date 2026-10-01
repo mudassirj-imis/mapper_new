@@ -1,5 +1,3 @@
-"""Async query service for the ``api_call_log`` audit trail."""
-
 from __future__ import annotations
 
 import logging
@@ -19,7 +17,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["get_log", "list_logs"]
 
 _MAX_PER_PAGE = 200
-#: Ceiling for ``limit``, which skips pagination and returns the newest N rows.
+
 _MAX_LIMIT = 5000
 
 _VALID_STATUS = {member.value for member in CallStatusEnum}
@@ -63,19 +61,7 @@ async def list_logs(
     per_page: int = 20,
     limit: int | None = None,
 ) -> tuple[int, list[CallLogSummary], int, int]:
-    """Return ``(total, items, page, per_page)``; page is 1-based.
-
-    ``limit`` composes with the paging arguments instead of replacing them: it
-    defines a window over the newest N matching rows, so the response is
-    ``limit / per_page`` pages at most and ``page`` selects the slice within
-    that window. For example ``limit=40, per_page=20, page=2`` returns the
-    second of two pages -- twenty rows, ids 80..61 for a hundred matches.
-    Passing ``limit`` alone therefore behaves like "give me the newest N".
-
-    The query is narrowed to the columns the connected server actually has (see
-    :mod:`backend.db.schema_probe`), so a host that cannot ``ALTER TABLE`` still
-    serves this view, with the absent columns filled from MongoDB below.
-    """
+    """Return ``(total, items, page, per_page)``; page is 1-based."""
     await schema_probe.ensure(db)
 
     conditions = []
@@ -110,12 +96,8 @@ async def list_logs(
     offset = (page - 1) * per_page
     row_cap = per_page
     if limit is not None:
-        # ``limit`` is a window over the newest N matches and composes with
-        # paging: it caps the total (``total``/``pages`` below are derived from
-        # it) and clips the rows a single page may return, so
-        # ``limit=40&per_page=20`` is exactly two pages of twenty.
         limit = max(1, min(int(limit), _MAX_LIMIT))
-        # A page that starts past the window has nothing left to return.
+
         row_cap = max(0, min(per_page, limit - offset))
 
     count_stmt = (
@@ -132,8 +114,6 @@ async def list_logs(
     total = int(count_result.scalar() or 0)
 
     if limit is not None:
-        # The window is the result set: the caller asked for the newest N, so
-        # the count is capped rather than reporting matches they can never see.
         total = min(total, limit)
 
     stmt = (
@@ -153,9 +133,6 @@ async def list_logs(
 
     rows = result.all()
 
-    # Columns the table lacks were left out of the SELECT; give them a value
-    # here so building the summary below cannot trigger a lazy load of a
-    # column MySQL would reject.
     for log, _endpoint in rows:
         schema_probe.apply_defaults(log)
 
@@ -174,8 +151,6 @@ async def list_logs(
                 if log.status is not None
                 else None
             ),
-            # Re-redacted on read as well as on write: rows written before
-            # masking existed still hold plaintext credentials.
             internal_request_headers=redact(log.source_request_headers),
             internal_request_body=redact(log.source_request_payload),
             internal_api_client_response=redact(log.source_response),
@@ -194,8 +169,6 @@ async def list_logs(
         for log, endpoint in rows
     ]
 
-    # Rows the legacy gateway wrote carry no headers or query string in MySQL;
-    # the detail lives in MongoDB. One range query covers the whole page.
     supplements = audit_enrichment.enrich_rows(
         [(log.id, log.created_at) for log, _ in rows],
         CallLogSummary.model_fields,
@@ -262,8 +235,6 @@ async def get_log(
                 if log.status is not None
                 else None
             ),
-            # Re-redacted on read as well as on write, so rows written before
-            # masking existed never expose a plaintext credential.
             internal_request_headers=redact(log.source_request_headers),
             internal_request_body=redact(log.source_request_payload),
             internal_api_client_response=redact(log.source_response),
@@ -287,12 +258,7 @@ async def get_log(
 
 
 def _enrich(record: CallLogResponse, created_at: datetime | None) -> CallLogResponse:
-    """Fill a record's empty fields from its MongoDB audit document.
-
-    In place, and never overwriting: MySQL remains the authority for anything
-    it already recorded. MongoDB only supplies what the legacy gateway left
-    out -- headers, the query string, and the captured console log.
-    """
+    """Fill a record's empty fields from its MongoDB audit document."""
     try:
         supplements = audit_enrichment.enrich_rows(
             [(record.id, created_at)], CallLogResponse.model_fields
@@ -306,7 +272,7 @@ def _enrich(record: CallLogResponse, created_at: datetime | None) -> CallLogResp
         ).items():
             if field in type(record).model_fields:
                 setattr(record, field, value)
-    except Exception:  # enrichment must never break the detail view
+    except Exception:
         logger.warning("Call log enrichment failed for %s", record.id, exc_info=True)
 
     return record

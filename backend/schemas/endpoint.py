@@ -1,10 +1,3 @@
-"""Endpoint CRUD and complete-mapping (bulk save) schemas.
-
-``CompleteMappingRequest`` / ``CompleteMappingResponse`` mirror the contract
-the mapper frontend uses when persisting a completed mapping — field names
-stay camelCase there on purpose, exactly as the client sends them.
-"""
-
 from datetime import datetime
 from typing import Any
 
@@ -14,12 +7,6 @@ from backend.models.enums import ContentTypeEnum, MethodEnum, ProtocolEnum
 
 
 class EndpointCreate(BaseModel):
-    """Payload for creating an endpoint (HTTP proxy, SFTP export, or mock).
-
-    ``endpoint_code`` is optional: when omitted the service derives it from
-    the target URL.
-    """
-
     endpoint_code: str | None = None
     source_api_url: str
     target_api_url: str

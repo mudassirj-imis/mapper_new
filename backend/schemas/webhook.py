@@ -1,5 +1,3 @@
-"""Webhook management payloads; destination network checks belong to delivery."""
-
 from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID

@@ -1,11 +1,3 @@
-"""SFTP bridge routes for the browser-based file browser.
-
-All three endpoints accept an ``endpoint_id`` plus optional per-request
-overrides; when ``endpoint_id`` is present the backend resolves the stored
-(encrypted) credentials and the sent fields act as overrides — matching the
-frontend ``sftpService.js`` contract.
-"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status

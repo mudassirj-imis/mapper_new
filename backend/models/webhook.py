@@ -1,5 +1,3 @@
-"""Webhook subscription persistence; delivery is owned by a separate service."""
-
 from datetime import datetime
 from enum import Enum
 from uuid import UUID

@@ -1,9 +1,3 @@
-"""ORM models — importing this package registers every mapper.
-
-Re-exports the models and the shared enums so callers can simply use
-``from backend.models import ApiEndpoint, MethodEnum``.
-"""
-
 from backend.models.enums import *
 from backend.models.enums import (
     CallStatusEnum,

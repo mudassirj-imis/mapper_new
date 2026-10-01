@@ -1,11 +1,3 @@
-"""Export / import of the endpoint registry as JSON, CSV or Postman bundles.
-
-Exports are returned as downloadable blobs (``Content-Disposition: attachment``)
-so the frontend can trigger a browser download; imports accept a multipart
-``UploadFile`` and return ``{success, imported_endpoints, imported_mappings,
-errors}`` — matching the ``exportImportService.js`` contract.
-"""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, UploadFile

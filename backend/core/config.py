@@ -1,9 +1,3 @@
-"""Application configuration.
-
-All settings are read from the process environment, falling back to a
-``.env`` file located in the current working directory (project root).
-"""
-
 import json
 from typing import Any
 
@@ -62,8 +56,6 @@ class Settings(BaseSettings):
 
     ENCRYPTION_KEY: str
 
-    #: Server bootstrap (``python main.py`` / PM2). ``reload`` must stay off in
-    #: production: the reloader respawns the worker on every source change.
     SERVER_HOST: str = "0.0.0.0"
     SERVER_PORT: int = Field(default=2528, ge=1, le=65535)
     SERVER_RELOAD: bool = False
@@ -71,12 +63,10 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["*"]
     API_TIMEOUT_SECONDS: int = 60
 
-    #: Connection pool for the shared ``httpx.AsyncClient``. Sized per
-    #: deployment, so it is configuration rather than a module constant.
     HTTP_MAX_CONNECTIONS: int = Field(default=100, gt=0)
     HTTP_MAX_KEEPALIVE_CONNECTIONS: int = Field(default=20, ge=0)
     HTTP_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0)
-    # Dedicated SQLite file; never use DATABASE_URL for scheduler state.
+
     SCHEDULER_DATABASE_PATH: str = "scheduler.db"
     SCHEDULER_TIMEZONE: str = "UTC"
     SCHEDULER_REQUEST_TIMEOUT_SECONDS: float = 30.0
@@ -87,37 +77,21 @@ class Settings(BaseSettings):
     SCHEDULER_MAX_CONCURRENT_JOBS: int = Field(default=10, gt=0)
     SCHEDULER_MAX_JOBS: int = Field(default=100, gt=0)
     SCHEDULER_RUN_RETENTION_DAYS: int = Field(default=90, gt=0)
-    # Payload guards for the optional request body / captured response body.
+
     SCHEDULER_MAX_REQUEST_BODY_BYTES: int = Field(default=65536, gt=0)
     SCHEDULER_MAX_RESPONSE_BODY_BYTES: int = Field(default=65536, gt=0)
     SCHEDULER_MAX_HEADERS: int = Field(default=32, gt=0)
 
     AUDIT_MONGO_ENABLED: bool = True
-    #: The legacy gateway (``mapper-engine``) writes a compact MySQL row *and* a
-    #: full-detail MongoDB document for every call. The MySQL row carries no
-    #: headers, query string or captured log, so the detail blocks in the UI
-    #: render empty unless we look the document up. Disable to serve MySQL only.
-    #:
-    #: These three are required, with no built-in default. A hardcoded
-    #: ``localhost`` fallback is worse than a missing value: it would connect
-    #: cleanly to the wrong database -- or to nothing at all -- and the log
-    #: views would render empty with no error to explain why. Failing to start
-    #: names the omission instead. Set them in the environment or in ``.env``;
-    #: see ``.env.example``.
+
     AUDIT_MONGO_URI: str
     AUDIT_MONGO_DATABASE: str
     AUDIT_MONGO_COLLECTION: str
-    #: How far either side of a row's ``created_at`` to look for its document.
-    #: Both records are written by the same in-process call, so they land within
-    #: milliseconds; the slack only absorbs clock jitter and slow inserts.
+
     AUDIT_MATCH_WINDOW_SECONDS: float = Field(default=5.0, gt=0)
-    #: Mongo must never add latency to the log views; fail fast, not slow.
+
     AUDIT_MONGO_TIMEOUT_MS: int = Field(default=1500, gt=0)
-    #: Whether to also write this backend's own calls to MongoDB. ``None`` is
-    #: automatic: mirror only when ``api_call_log`` is missing the header columns
-    #: (see :mod:`backend.db.schema_probe`), so the detail survives a database
-    #: the service account cannot ``ALTER`` and a migrated database keeps
-    #: paying nothing. Set explicitly to force the choice either way.
+
     AUDIT_MONGO_MIRROR: bool | None = None
 
     APP_ROOT_PATH: str = ""
@@ -125,12 +99,7 @@ class Settings(BaseSettings):
     @field_validator("APP_ROOT_PATH", mode="before")
     @classmethod
     def _normalize_root_path(cls, value: Any) -> str:
-        """Normalise to ``""`` or a leading-slash, no-trailing-slash prefix.
 
-        FastAPI concatenates this straight onto ``/openapi.json`` and
-        ``/docs/oauth2-redirect``, so ``mapper-new/`` or ``/mapper-new/`` would
-        both produce a broken URL.
-        """
         if value is None:
             return ""
         text = str(value).strip()
@@ -139,9 +108,7 @@ class Settings(BaseSettings):
         return "/" + text.strip("/")
 
     AUTH_BASE_URL: str
-    #: AES-256-GCM key for the central auth envelope. ``central_auth`` falls back
-    #: to ``UPSTREAM_AUTH_DECRYPTION_KEY`` when unset, so leaving this blank
-    #: silently reuses the upstream key - set it explicitly per environment.
+
     AUTH_SERVICE_ENCRYPTION_KEY: str | None = None
 
     UPSTREAM_AUTH_URL: str | None = None
@@ -190,8 +157,7 @@ class Settings(BaseSettings):
     SFTP_MAX_CONCURRENT: int = Field(default=10, gt=0)
 
     WEBHOOK_DELIVERY_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0)
-    #: Pause before the single delivery retry, so a flapping receiver is not
-    #: hammered twice back to back.
+
     WEBHOOK_RETRY_DELAY_SECONDS: float = Field(default=0.25, ge=0)
 
     POLICY_MAX_ENDPOINTS: int = Field(default=10000, gt=0)

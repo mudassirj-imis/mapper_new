@@ -22,12 +22,12 @@ from backend.core.config import settings
 
 _HTTP_URL = TypeAdapter(HttpUrl)
 _METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
-#: Methods for which a request body is meaningful.
+
 _METHODS_WITH_BODY = {"POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 
-#: RFC 9110 ``token`` characters, the only ones legal in a header name.
+
 _HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
-#: Headers httpx owns, or that would defeat the pinned-destination guarantee.
+
 _FORBIDDEN_HEADERS = frozenset(
     {
         "connection",
@@ -103,12 +103,7 @@ ScheduledJobBody = Annotated[str | None, AfterValidator(_validate_body)]
 
 
 def _as_utc(value: datetime) -> datetime:
-    """Attach UTC to the naive datetimes SQLite hands back.
 
-    The scheduler stores every timestamp with ``datetime.now(timezone.utc)``,
-    but SQLite has no timezone type so the value comes back naive. Serialised
-    as-is it would be read by the browser as *local* time and render hours off.
-    """
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)

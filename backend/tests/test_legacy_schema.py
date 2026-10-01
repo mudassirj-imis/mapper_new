@@ -1,15 +1,3 @@
-"""Behaviour of the audit tables on a host that cannot be migrated.
-
-Some deployments run a MySQL account without ``ALTER`` privilege, so
-``api_call_log`` never got the header columns this model maps. The log views
-used to die with error 1054 on every read. These tests pin the contract that
-replaced it: query and write only the columns that exist, take the detail from
-MongoDB, and never let the audit store break a request.
-
-Everything is mocked -- no database, network or secret files, matching
-:mod:`test_foundations`.
-"""
-
 import asyncio
 import os
 import unittest
@@ -21,9 +9,6 @@ from pydantic_settings import DotEnvSettingsSource
 from sqlalchemy import select
 
 with (
-    # ``Settings`` requires the audit-store values and this module must not
-    # depend on a developer's ``.env`` to find them. Nothing here connects: the
-    # collection is always stubbed or the store disabled.
     patch.dict(
         os.environ,
         {
@@ -42,8 +27,7 @@ with (
     from backend.models import ApiCallLog
     from backend.services import audit_enrichment, log_service, log_writer
 
-#: The columns the header migration adds; a host that cannot ALTER is missing
-#: exactly these.
+
 MIGRATED = (
     "source_request_headers",
     "source_response_headers",
@@ -55,9 +39,6 @@ MIGRATED = (
 )
 
 
-#: Field names of a real ``mapper-engine`` audit document. The mirror written by
-#: this backend must use exactly these, so one collection holds two writers
-#: speaking the same language and the reader needs no special case per origin.
 ENGINE_DOCUMENT_FIELDS = (
     "request_id",
     "timestamp",
@@ -91,12 +72,7 @@ def _legacy_probe() -> SchemaProbe:
 
 
 def _log_row(**overrides) -> SimpleNamespace:
-    """An ``(ApiCallLog, ApiEndpoint)`` pair with the columns a legacy table has.
 
-    Absent columns are present as ``None`` because the service stamps them
-    itself; a row that lacked them would raise on attribute access instead of
-    proving the merge works.
-    """
     log = SimpleNamespace(
         id=9,
         endpoint_id=1,
@@ -133,31 +109,17 @@ def _endpoint() -> SimpleNamespace:
 
 
 def asyncio_run(coro):
-    """Drive a coroutine to completion.
-
-    The tests here mix plain and ``IsolatedAsyncio`` cases, and the functions
-    under test are coroutines either way, so each test runs its own loop rather
-    than depending on the case type it happens to live in.
-    """
+    """Drive a coroutine to completion."""
     return asyncio.run(coro)
 
 
 def _select_with(probe: SchemaProbe):
     """The list view's own query, narrowed the way ``log_service`` narrows it."""
-    return (
-        select(ApiCallLog)
-        .options(*probe.load_options())
-    )
+    return select(ApiCallLog).options(*probe.load_options())
 
 
 class AuditStoreSettingsTests(unittest.TestCase):
-    """The audit store's location is deployment config, never a code default.
-
-    A hardcoded ``localhost`` fallback is the dangerous kind: the service would
-    start cleanly, connect to the wrong place (or to nothing), and the log views
-    would render empty with nothing to explain why. Requiring the values turns
-    that silent failure into a startup error naming the missing setting.
-    """
+    """The audit store's location is deployment config, never a code default."""
 
     BASE: dict[str, str] = {
         "JWT_SECRET": "test",
@@ -187,13 +149,12 @@ class AuditStoreSettingsTests(unittest.TestCase):
         from pydantic import ValidationError
 
         for omitted in self.MONGO:
-            with self.subTest(omitted=omitted), self.assertRaises(
-                ValidationError
-            ) as caught:
-                self._settings(
-                    **{k: v for k, v in self.MONGO.items() if k != omitted}
-                )
-            # The error must name the setting, or an operator cannot act on it.
+            with (
+                self.subTest(omitted=omitted),
+                self.assertRaises(ValidationError) as caught,
+            ):
+                self._settings(**{k: v for k, v in self.MONGO.items() if k != omitted})
+
             self.assertIn(omitted, str(caught.exception))
 
     def test_no_mongo_host_is_baked_into_the_source(self):
@@ -225,7 +186,7 @@ class SchemaProbeTests(unittest.IsolatedAsyncioTestCase):
 
     def test_absent_columns_are_omitted_from_selects(self):
         compiled = str(_select_with(_legacy_probe()))
-        # The query must not name a column the server would reject.
+
         for column in MIGRATED:
             self.assertNotIn(f"api_call_log.{column}", compiled)
 
@@ -276,10 +237,8 @@ class SchemaProbeTests(unittest.IsolatedAsyncioTestCase):
         probe._present = _mapped_columns()
         db = MagicMock()
         db.connection = AsyncMock(side_effect=AssertionError("re-inspected"))
-        await probe.ensure(db)  # cached: must not touch the database
+        await probe.ensure(db)
         db.connection.assert_not_awaited()
-
-
 
 
 class LogServiceOnLegacySchemaTests(unittest.IsolatedAsyncioTestCase):
@@ -368,7 +327,6 @@ class LogServiceOnLegacySchemaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail.internal_request_headers, {"X-From-MySQL": "yes"})
 
 
-
 class MirrorTests(unittest.IsolatedAsyncioTestCase):
     """Rows this backend writes must still have a full-detail document."""
 
@@ -396,9 +354,10 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
     def _mirrored(self, log_id=11, log_data=None):
         """Mirror one call into a stub collection; return the document."""
         collection = Mock()
-        with patch.object(
-            audit_enrichment, "_collection", return_value=collection
-        ), patch.object(audit_enrichment.settings, "AUDIT_MONGO_MIRROR", True):
+        with (
+            patch.object(audit_enrichment, "_collection", return_value=collection),
+            patch.object(audit_enrichment.settings, "AUDIT_MONGO_MIRROR", True),
+        ):
             written = asyncio_run(
                 audit_enrichment.mirror_call(log_id, log_data or self.LOG_DATA)
             )
@@ -406,9 +365,7 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         return collection.insert_one.call_args.args[0]
 
     def test_mirroring_is_off_for_a_complete_schema(self):
-        with patch.object(
-            audit_enrichment.schema_probe, "_present", _mapped_columns()
-        ):
+        with patch.object(audit_enrichment.schema_probe, "_present", _mapped_columns()):
             self.assertFalse(audit_enrichment.should_mirror())
 
     def test_mirroring_is_on_when_a_column_is_absent(self):
@@ -420,9 +377,10 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(audit_enrichment.should_mirror())
 
     def test_mirroring_respects_an_explicit_setting(self):
-        with patch.object(
-            audit_enrichment.schema_probe, "_present", _mapped_columns()
-        ), patch.object(audit_enrichment.settings, "AUDIT_MONGO_MIRROR", True):
+        with (
+            patch.object(audit_enrichment.schema_probe, "_present", _mapped_columns()),
+            patch.object(audit_enrichment.settings, "AUDIT_MONGO_MIRROR", True),
+        ):
             self.assertTrue(audit_enrichment.should_mirror())
 
     def test_mirroring_stops_when_mongo_is_disabled(self):
@@ -443,7 +401,10 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
 
     def test_mirrored_document_masks_credentials(self):
         document = self._mirrored(
-            log_data={**self.LOG_DATA, "external_request_body": {"user": "example-user"}}
+            log_data={
+                **self.LOG_DATA,
+                "external_request_body": {"user": "example-user"},
+            }
         )
         self.assertEqual(
             document["internal_request_headers"]["Authorization"], "********"
@@ -451,18 +412,16 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(document["external_request_body"]["user"], "********")
 
     def test_mirror_failure_never_breaks_the_write(self):
-        with patch.object(
-            audit_enrichment, "_collection", return_value=None
-        ), patch.object(audit_enrichment.settings, "AUDIT_MONGO_MIRROR", True):
-            self.assertFalse(asyncio_run(audit_enrichment.mirror_call(11, self.LOG_DATA)))
+        with (
+            patch.object(audit_enrichment, "_collection", return_value=None),
+            patch.object(audit_enrichment.settings, "AUDIT_MONGO_MIRROR", True),
+        ):
+            self.assertFalse(
+                asyncio_run(audit_enrichment.mirror_call(11, self.LOG_DATA))
+            )
 
     def test_mirrored_document_uses_the_engine_field_names(self):
-        """Both writers must produce the same shape in a shared collection.
-
-        Field names are copied from a real ``mapper-engine`` document. A rename
-        here would leave this backend's documents unreadable by the same
-        ``_project`` that reads the engine's, silently emptying the detail view.
-        """
+        """Both writers must produce the same shape in a shared collection."""
         document = self._mirrored()
         for field in ENGINE_DOCUMENT_FIELDS:
             self.assertIn(field, document, f"missing engine field: {field}")
@@ -482,20 +441,12 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(document["overall_status"])
 
     def test_an_empty_request_body_is_still_recorded(self):
-        """``{}`` means "this call had no body", which is worth keeping.
-
-        The engine writes it, and the detail view distinguishes it from a body
-        that was never captured.
-        """
+        """``{}`` means "this call had no body", which is worth keeping."""
         document = self._mirrored()
         self.assertEqual(document["external_request_body"], {})
 
     def test_an_uncaptured_header_block_is_left_out(self):
-        """No headers is "not captured", so the key is absent rather than ``{}``.
-
-        The opposite of the body rule: a header block we never received must not
-        be rendered as "the client sent no headers".
-        """
+        """No headers is "not captured", so the key is absent rather than ``{}``."""
         document = self._mirrored(
             log_data={**self.LOG_DATA, "external_request_headers": None}
         )
@@ -503,10 +454,13 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
 
     def test_no_document_without_a_row_id(self):
         collection = Mock()
-        with patch.object(
-            audit_enrichment, "_collection", return_value=collection
-        ), patch.object(audit_enrichment.settings, "AUDIT_MONGO_MIRROR", True):
-            self.assertFalse(asyncio_run(audit_enrichment.mirror_call(None, self.LOG_DATA)))
+        with (
+            patch.object(audit_enrichment, "_collection", return_value=collection),
+            patch.object(audit_enrichment.settings, "AUDIT_MONGO_MIRROR", True),
+        ):
+            self.assertFalse(
+                asyncio_run(audit_enrichment.mirror_call(None, self.LOG_DATA))
+            )
         collection.insert_one.assert_not_called()
 
     @staticmethod
@@ -528,8 +482,11 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
     def test_written_row_omits_absent_columns(self):
         """The INSERT itself must not name a column the server does not have."""
         db = self._write_db()
-        with patch.object(log_writer, "schema_probe", _legacy_probe()), patch.object(
-            audit_enrichment, "mirror_call", AsyncMock(return_value=False)
+        with (
+            patch.object(log_writer, "schema_probe", _legacy_probe()),
+            patch.object(
+                audit_enrichment, "mirror_call", AsyncMock(return_value=False)
+            ),
         ):
             asyncio_run(log_writer.write_call_log(db, self.LOG_DATA))
 
@@ -542,32 +499,34 @@ class MirrorTests(unittest.IsolatedAsyncioTestCase):
         """The fix must not cost a migrated deployment its MySQL detail."""
         db = self._write_db()
         collection = Mock()
-        with patch.object(log_writer, "schema_probe", SchemaProbe()), patch.object(
-            audit_enrichment.schema_probe, "_present", _mapped_columns()
-        ), patch.object(
-            audit_enrichment, "_collection", return_value=collection
+        with (
+            patch.object(log_writer, "schema_probe", SchemaProbe()),
+            patch.object(audit_enrichment.schema_probe, "_present", _mapped_columns()),
+            patch.object(audit_enrichment, "_collection", return_value=collection),
         ):
             asyncio_run(log_writer.write_call_log(db, self.LOG_DATA))
 
         statement = db.execute.call_args_list[0].args[0]
         self.assertIn("source_request_headers", self._inserted_sql(db))
-        # The values are what the detail view later reads back out of MySQL.
+
         params = statement.compile().params
         self.assertEqual(params["source_request_headers"]["Accept"], "*/*")
         self.assertEqual(params["target_query_params"], {"page": "2"})
-        # Nothing to mirror: MySQL already holds the whole detail.
+
         collection.insert_one.assert_not_called()
 
     def test_a_legacy_table_mirrors_what_it_cannot_store(self):
         """The compensating write: headers live in MongoDB instead."""
         db = self._write_db()
         collection = Mock()
-        with patch.object(log_writer, "schema_probe", _legacy_probe()), patch.object(
-            audit_enrichment.schema_probe,
-            "_present",
-            _mapped_columns() - set(MIGRATED),
-        ), patch.object(
-            audit_enrichment, "_collection", return_value=collection
+        with (
+            patch.object(log_writer, "schema_probe", _legacy_probe()),
+            patch.object(
+                audit_enrichment.schema_probe,
+                "_present",
+                _mapped_columns() - set(MIGRATED),
+            ),
+            patch.object(audit_enrichment, "_collection", return_value=collection),
         ):
             asyncio_run(log_writer.write_call_log(db, self.LOG_DATA))
 
@@ -599,6 +558,5 @@ class AuditStoreOutageTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(detail.internal_request_headers)
 
 
-
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     unittest.main()

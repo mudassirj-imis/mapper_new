@@ -1,10 +1,3 @@
-"""Client for the centralized SSPA/IMIS authentication service.
-
-The central service requires a short-lived pre-auth token before login and
-uses AES-GCM for the login request/response envelope.  This module keeps that
-protocol server-side so the mapper frontend never needs the symmetric key.
-"""
-
 from __future__ import annotations
 
 import base64
@@ -443,7 +436,6 @@ async def central_logout(client: httpx.AsyncClient, access_token: str) -> None:
         )
     except (httpx.RequestError, httpx.TimeoutException):
         return
-    # A 401/403 means the token is already invalid, which is a successful
 
     if response.status_code not in {401, 403}:
         try:

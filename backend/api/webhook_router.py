@@ -1,10 +1,3 @@
-"""Webhook subscription CRUD.
-
-``GET/POST /api/webhooks`` and ``PUT/DELETE /api/webhooks/{id}`` manage enabled
-subscriptions (global when ``endpoint_id`` is null, or scoped to one endpoint)
-that drive the fire-and-forget delivery in :mod:`backend.services.webhook_service`.
-"""
-
 from __future__ import annotations
 
 from uuid import UUID

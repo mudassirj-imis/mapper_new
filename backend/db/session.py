@@ -1,10 +1,3 @@
-"""Async SQLAlchemy engine and session factory.
-
-The engine is created once per process; request handlers obtain sessions via
-the :func:`get_db` FastAPI dependency. Everything here is strictly async —
-no synchronous engine/session is used anywhere in this codebase.
-"""
-
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -33,11 +26,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency yielding a request-scoped async session.
 
-    Transactions are controlled explicitly by services/repositories; on an
-    unhandled exception the session is rolled back before being closed.
-    """
     async with AsyncSessionLocal() as session:
         try:
             yield session

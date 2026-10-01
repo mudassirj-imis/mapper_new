@@ -1,10 +1,3 @@
-"""Mock configuration for an endpoint.
-
-``GET/PUT /api/api-endpoints/{id}/mock`` read and update the endpoint's
-``mock_response``/``mock_enabled`` flags that drive the mock short-circuit in
-the gateway engine.
-"""
-
 from __future__ import annotations
 
 from typing import Any

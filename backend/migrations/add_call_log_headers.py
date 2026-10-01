@@ -1,29 +1,3 @@
-"""Idempotent additive migration for ``api_call_log``.
-
-The main application database is MySQL and is not created by this process --
-there is no ``create_all`` for it, so new columns have to be added explicitly.
-This script only ever *adds* nullable columns, so it is safe to re-run and does
-not rewrite or drop existing audit rows.
-
-Usage::
-
-    python -m backend.migrations.add_call_log_headers
-
-It is a no-op once the columns exist, so it can be wired into a deploy step
-without special-casing.
-
-Usage::
-
-    python -m backend.migrations.add_call_log_headers            # add what is missing
-    python -m backend.migrations.add_call_log_headers --check    # report only
-
-On a host whose MySQL account cannot ``ALTER TABLE`` this cannot run, and that
-is fine: the service adapts to the schema it finds rather than requiring it
-(see :mod:`backend.db.schema_probe`). The detail is served from MongoDB there,
-so running this later is an improvement -- MySQL becomes the authority again --
-not a prerequisite for the log views working at all.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -35,7 +9,7 @@ from backend.db.session import engine
 
 __all__ = ["ADDED_COLUMNS", "ensure_columns", "main"]
 
-#: ``(column, DDL type)`` pairs added to ``api_call_log``.
+
 ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("source_request_headers", "JSON"),
     ("source_response_headers", "JSON"),
@@ -77,8 +51,7 @@ async def ensure_columns() -> list[str]:
             for column, ddl_type in ADDED_COLUMNS:
                 if column in existing:
                     continue
-                # Identifier and type come from the constant above, never from
-                # user input.
+
                 sync_connection.execute(
                     text(f"ALTER TABLE {_TABLE} ADD COLUMN {column} {ddl_type}")
                 )
@@ -92,9 +65,7 @@ async def main() -> int:
     if "--check" in sys.argv[1:]:
         missing = await _missing_columns()
         if missing:
-            print(
-                f"{_TABLE}: missing {', '.join(column for column, _ in missing)}"
-            )
+            print(f"{_TABLE}: missing {', '.join(column for column, _ in missing)}")
         else:
             print(f"{_TABLE}: up to date")
     else:

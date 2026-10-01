@@ -1,19 +1,3 @@
-"""Async CRUD service for the ``api_endpoints`` registry.
-
-Every function takes an :class:`~sqlalchemy.ext.asyncio.AsyncSession` and owns
-its transaction: mutations commit (and refresh) before returning, so routers
-can serialize the returned ORM objects directly. The explicit ``*_flush``
-helpers are the exception: their caller owns commit/rollback, and returned
-credentials remain encrypted.
-
-Credential columns (``sftp_password``, ``api_password``) never hold plaintext
-at rest. Values are encrypted with AES-256-GCM (:mod:`backend.core.crypto`)
-before every write and decrypted when an endpoint is returned to the API.
-Decryption uses :func:`~sqlalchemy.orm.attributes.set_committed_value` so the
-plaintext attribute is never marked dirty — a later ``commit()`` on the same
-session cannot write it back to the database.
-"""
-
 from typing import Any
 from uuid import uuid4
 
@@ -47,13 +31,7 @@ def generate_endpoint_code() -> str:
 
 
 def _as_int(value: object) -> int | None:
-    """Best-effort conversion of ``value`` to the integer endpoint id.
 
-    ``api_endpoint.id`` is an ``INT`` auto-increment column, so ids arrive as
-    integers (typed path parameters) or numeric strings. The previous UUID
-    coercion turned *every* id into a miss, so registered endpoints answered
-    404 and the mapping editor never loaded.
-    """
     if isinstance(value, int):
         return value
     if value is None or value == "":
@@ -65,11 +43,7 @@ def _as_int(value: object) -> int | None:
 
 
 def _encrypt_sensitive(data: dict[str, Any]) -> dict[str, Any]:
-    """Copy ``data`` with credential fields encrypted for storage.
 
-    Empty strings are normalised to ``None`` so clearing a credential is
-    persisted as an explicit ``NULL`` instead of a ciphertext of ``""``.
-    """
     prepared = dict(data)
     for field in _SENSITIVE_FIELDS:
         if field not in prepared:
@@ -109,12 +83,7 @@ async def list_endpoints(
     search: str | None = None,
     is_active: bool | None = None,
 ) -> list[ApiEndpoint]:
-    """List endpoints (newest first) with parameters eagerly loaded.
 
-    ``search`` matches ``endpoint_code``, ``source_api_url`` or
-    ``target_api_url`` (case-insensitive substring). ``is_active`` narrows
-    the result to enabled/disabled endpoints when provided.
-    """
     statement = (
         select(ApiEndpoint)
         .options(selectinload(ApiEndpoint.parameters))
@@ -139,10 +108,7 @@ async def list_endpoints(
 
 
 async def get_endpoint(db: AsyncSession, endpoint_id: int | str) -> ApiEndpoint | None:
-    """Fetch one endpoint (parameters eager-loaded) with credentials decrypted.
 
-    Returns ``None`` when the id is unknown (or not a valid integer id).
-    """
     identifier = _as_int(endpoint_id)
     if identifier is None:
         return None
@@ -156,11 +122,7 @@ async def get_endpoint(db: AsyncSession, endpoint_id: int | str) -> ApiEndpoint 
 
 
 async def create_endpoint_flush(db: AsyncSession, data: dict[str, Any]) -> ApiEndpoint:
-    """Stage and flush creation; no commit, refresh, or credential decryption.
 
-    Compose with mapping writes in one caller-owned transaction. On any
-    failure the caller must roll back; publish events only after its commit.
-    """
     payload = _encrypt_sensitive(data)
     if not payload.get("endpoint_code"):
         payload["endpoint_code"] = generate_endpoint_code()
@@ -171,11 +133,7 @@ async def create_endpoint_flush(db: AsyncSession, data: dict[str, Any]) -> ApiEn
 
 
 async def create_endpoint(db: AsyncSession, data: dict[str, Any]) -> ApiEndpoint:
-    """Insert a new endpoint, encrypting credentials before the write.
 
-    ``endpoint_code`` is generated (``EP-XXXXXXXX``) when the caller did not
-    supply one.
-    """
     endpoint = await create_endpoint_flush(db, data)
     await db.commit()
     await db.refresh(endpoint)
@@ -185,11 +143,7 @@ async def create_endpoint(db: AsyncSession, data: dict[str, Any]) -> ApiEndpoint
 async def update_endpoint(
     db: AsyncSession, endpoint_id: int | str, data: dict[str, Any]
 ) -> ApiEndpoint | None:
-    """Apply a partial update — only the provided keys are touched.
 
-    Credentials are re-encrypted when present; a ``None``/``""`` value clears
-    the stored credential. Returns ``None`` when the endpoint does not exist.
-    """
     endpoint = await _fetch_by_id(db, endpoint_id)
     if endpoint is None:
         return None
@@ -205,11 +159,7 @@ async def update_endpoint(
 async def delete_endpoint(
     db: AsyncSession, endpoint_id: int | str, hard: bool = False
 ) -> bool:
-    """Delete an endpoint: soft (``is_active=False``) or hard (row removed).
 
-    Hard delete removes the parameter rows explicitly first, so it also works
-    on databases where the ``ON DELETE CASCADE`` constraint is not enforced.
-    """
     endpoint = await _fetch_by_id(db, endpoint_id)
     if endpoint is None:
         return False
@@ -235,10 +185,7 @@ async def check_duplicate(
     method: str,
     exclude_id: int | str | None = None,
 ) -> ApiEndpoint | None:
-    """Return an active endpoint matching source/target URL + method, if any.
 
-    ``exclude_id`` skips one row, so an update never matches itself.
-    """
     statement = select(ApiEndpoint).where(
         ApiEndpoint.source_api_url == source_url,
         ApiEndpoint.target_api_url == target_url,

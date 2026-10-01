@@ -1,13 +1,3 @@
-"""Portable mapping bundles: JSON / CSV / Postman exports and imports.
-
-Exports serialise the ``api_endpoints`` registry (with its parameter mappings)
-into one of three interchange formats. Imports rehydrate them using the
-``*_flush`` service functions so an import either fully persists or rolls back
-without poisoning the caller's session. Credentials (SFTP/API passwords) travel
-in exported bundles — the feature is a full mapping back-up and they are an
-intended part of the round-trip.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -287,12 +277,7 @@ def _stringify(value: Any) -> str:
 
 
 def _postman_variables(document: dict) -> dict[str, str]:
-    """Resolve ``{{name}}`` placeholders from the collection ``variable`` block.
 
-    Returns ``{"{{base_url}}": "https://..."}`` so raw Postman URLs (which are
-    not absolute and would otherwise fail the frontend's ``http(s)://`` check)
-    can be turned into real, callable target URLs.
-    """
     variables: dict[str, str] = {}
     for item in document.get("variable", []) or []:
         if not isinstance(item, dict):
@@ -345,12 +330,7 @@ def _walk_postman_requests(items: Any):
 
 
 def _postman_response_body(request: dict) -> Any:
-    """Return the JSON-parsed body of the first saved response, if any.
 
-    Set as ``mock_response`` so imported endpoints reproduce the source
-    collection's responses in the UI without contacting the real upstream.
-    Falls back to the raw body text when it is not valid JSON.
-    """
     for response in request.get("response", []) or []:
         if not isinstance(response, dict):
             continue

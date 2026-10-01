@@ -1,17 +1,9 @@
-"""Gateway (proxy) execution schemas for the map-and-call test endpoint."""
-
 from typing import Any
 
 from pydantic import BaseModel
 
 
 class MapAndCallRequest(BaseModel):
-    """Test-run request: apply an endpoint's mappings and call the upstream.
-
-    ``endpointId`` is the ``api_endpoint.id`` integer (as sent by the frontend),
-    accepted as an ``int`` or a numeric string.
-    """
-
     targetUrl: str
     targetMethod: str
     requestData: dict[str, Any]
@@ -20,14 +12,6 @@ class MapAndCallRequest(BaseModel):
 
 
 class MapAndCallResponse(BaseModel):
-    """Result of a map-and-call execution, including header audit trails.
-
-    The ``external_*`` / ``total_time_ms`` fields carry the wire-level audit
-    trail the response inspector renders; all are optional so an attempt that
-    never reached the upstream (endpoint missing, DNS failure, …) can answer
-    with whatever was captured.
-    """
-
     success: bool
     data: Any | None = None
     status_code: int | None = None

@@ -1,14 +1,3 @@
-"""Per-endpoint circuit breaker with a CLOSED -> OPEN -> HALF_OPEN state machine.
-
-Failures are counted in memory inside a trailing window; when the count for a
-key reaches the configured threshold the circuit trips OPEN and callers are
-rejected (503) without hitting the downstream. After the recovery timeout
-elapses the next check reopens the circuit to HALF_OPEN and lets a single trial
-request through — a success closes it again, a failure re-trips it.
-
-State is process-local and threaded-safe via an ``asyncio.Lock``.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -65,11 +54,7 @@ class CircuitBreaker:
         self._lock = asyncio.Lock()
 
     async def allow(self, key: str) -> bool:
-        """Whether a request for ``key`` may proceed now.
 
-        An OPEN circuit rejects until the recovery timeout elapses, then the
-        next call reopens to HALF_OPEN and grants a single trial request.
-        """
         async with self._lock:
             state = self._states[key]
             now = time.monotonic()

@@ -412,8 +412,6 @@ async def execute_scheduled_job(job_id: str, url: str, method: str) -> Scheduled
         semaphore = asyncio.Semaphore(settings.SCHEDULER_MAX_CONCURRENT_JOBS)
     try:
         async with semaphore:
-            # The row is re-read on every run so edits to headers/body apply
-            # immediately, even to jobs APScheduler restored from its jobstore.
             async with SchedulerSessionLocal() as db:
                 row = await _fetch_job(db, job_id)
             headers = load_headers(row.headers) if row is not None else None

@@ -1,14 +1,3 @@
-"""Endpoint registry routes and the complete-mapping (bulk save) flow.
-
-Mounted under ``/api`` in :mod:`backend.main`, so the effective paths are
-``/api/api-endpoints...`` and ``/api/mappings/complete``. Every route requires
-an authenticated, active user.
-
-``POST/PUT /mappings/complete`` implement the contract consumed by the
-frontend mapping editor: camelCase payloads (:class:`CompleteMappingRequest`),
-signature-based duplicate detection and full parameter replacement on update.
-"""
-
 from datetime import datetime
 
 from fastapi import (
@@ -50,12 +39,7 @@ _PARAM_TYPE_VALUES = {member.value for member in ParamTypeEnum}
 
 
 def _resolve_param_type(item: MappingItem) -> str:
-    """Destination of one mapping row (BODY/HEADER/QUERY).
 
-    The wire format carries the value twice (``parameterTypeValue`` mirrors
-    ``parameterType``); whichever field the client actually sent wins, and
-    anything unrecognised falls back to ``BODY``.
-    """
     sent = item.model_fields_set
     candidates = [
         item.parameterTypeValue if "parameterTypeValue" in sent else None,
@@ -206,7 +190,7 @@ async def create_api_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> EndpointResponse:
-    """Register a new endpoint (credentials are encrypted before storage)."""
+
     data = payload.model_dump()
 
     if data.get("created_by") is None:
@@ -237,11 +221,7 @@ async def update_api_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> EndpointResponse:
-    """Partially update an endpoint; PUT and PATCH share this handler.
 
-    Only the fields present in the payload are touched. ``sftp_password`` and
-    ``api_password`` are re-encrypted; an empty string clears the credential.
-    """
     data = payload.model_dump(exclude_unset=True)
     data["updated_by"] = current_user.id
 
@@ -325,13 +305,7 @@ async def save_complete_mapping(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> CompleteMappingResponse:
-    """Persist a completed field mapping sent by the mapping editor.
 
-    * the identical mapping is already stored -> warning result, nothing written;
-    * the same route exists with different fields -> endpoint refreshed and
-      parameters replaced;
-    * otherwise -> a new endpoint plus its parameters are created.
-    """
     method = _normalize_method(payload.targetMethod)
 
     existing = await endpoint_service.check_duplicate(
@@ -450,12 +424,7 @@ async def update_complete_mapping(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> CompleteMappingResponse:
-    """Replace an existing mapping — endpoint fields plus all parameters.
 
-    Returns a duplicate warning when another endpoint already stores the same
-    route and field signature; otherwise the endpoint is updated in place and
-    every parameter row is re-created from the payload.
-    """
     existing = await endpoint_service.get_endpoint(
         db,
         endpoint_id,

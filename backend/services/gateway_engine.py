@@ -1,17 +1,3 @@
-"""Async map-and-call gateway engine.
-
-Pipeline: resolve endpoint -> load active parameter mappings -> transform the
-incoming payload (target field names) into the upstream contract (source
-field names) -> call the upstream with a shared :class:`httpx.AsyncClient` ->
-return a result dict carrying every wire-level detail (status, headers,
-bodies, timings).
-
-The engine never raises for upstream failures: timeouts, connection errors
-and HTTP errors all come back as structured ``{"success": False, ...}``
-results, so the router can answer with a full audit trail and the background
-log writer can persist the failure.
-"""
-
 import logging
 import time
 from collections.abc import Mapping, Sequence
@@ -106,11 +92,7 @@ class MappingSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class ExecutionOutcome:
-    """Immutable internal result; ``to_result`` recreates the legacy envelope.
-
-    Pool exhaustion is local and never proves an upstream attempt. For other
-    transports, attempted means send was entered, not that a peer received it.
-    """
+    """Immutable internal result; ``to_result`` recreates the legacy envelope."""
 
     result: Mapping[str, Any]
     failure_kind: FailureKind = None
@@ -195,13 +177,7 @@ _CONNECT_TIMEOUT_SECONDS = 10.0
 
 
 def _as_int(value: object) -> int | None:
-    """Best-effort conversion of ``value`` to the integer endpoint id.
-
-    ``api_endpoint.id`` is an ``INT`` auto-increment column, so an explicit id
-    from the tester arrives as an integer (or a numeric string). The previous
-    UUID coercion made every explicit-id lookup miss and silently fell through
-    to URL matching, hiding the real mapping behind a path coincidence.
-    """
+    """Best-effort conversion of ``value`` to the integer endpoint id."""
     if isinstance(value, int):
         return value
     if value is None or value == "":
@@ -230,16 +206,7 @@ def _log_only_result(
     headers: dict[str, Any] | None,
     timeout: int,
 ) -> dict[str, Any]:
-    """Result envelope for a log-only endpoint (scheme-less ``source_api_url``).
-
-    Some registered endpoints carry a bare path (``/v1/audio/play``) because
-    they exist purely to record an inbound call, not to proxy it. The legacy
-    engine skipped the external call for those and still reported success, so
-    an operator can exercise the mapping and inspect what was mapped.
-
-    This mirrors ``mock_service.build_mock_result`` so the router, response
-    viewer and call-log writer keep working without special casing.
-    """
+    """Result envelope for a log-only endpoint (scheme-less ``source_api_url``)."""
     return {
         "request_id": request_id,
         "endpoint_id": endpoint_id,
@@ -295,12 +262,7 @@ class GatewayEngine:
         target_url: str | None = None,
         target_method: str | None = None,
     ) -> dict[str, Any]:
-        """Run the full pipeline and return an audit-complete result dict.
-
-        The result carries everything the response viewer and the call log
-        need: outcome, upstream status, all exchanged headers/bodies, and
-        both the upstream-only and total timings.
-        """
+        """Run the full pipeline and return an audit-complete result dict."""
         started = time.perf_counter()
         method = str(target_method or "").strip().upper()
         url = str(target_url or "").strip()
@@ -365,12 +327,7 @@ class GatewayEngine:
         *,
         mappings: Sequence[MappingSnapshot] | None = None,
     ) -> ExecutionOutcome:
-        """Live execution only; supplied snapshots skip all mapping queries.
-
-        The session must be read-only, never shared with concurrent tasks.
-        Resolution and mapping loading release their read transactions. A
-        dedup leader may load mappings here; followers need only resolution.
-        """
+        """Live execution only; supplied snapshots skip all mapping queries."""
         started = time.perf_counter()
         method = str(target_method or "").strip().upper()
         url = str(target_url or "").strip()
@@ -466,7 +423,7 @@ class GatewayEngine:
                     result["status_code"],
                     result["error"],
                 )
-        except Exception as exc:  # defensive: the gateway must never crash
+        except Exception as exc:
             failure_kind = "internal"
             logger.exception(
                 "Gateway call %s: unexpected pipeline failure", result["request_id"]
@@ -494,11 +451,7 @@ class GatewayEngine:
         target_url: str | None = None,
         target_method: str | None = None,
     ) -> EndpointSnapshot | None:
-        """Config-only resolution; no mapping load, credentials, or open read tx.
-
-        Use a read-only session: rollback also discards already-flushed writes.
-        Caller-owned write transactions must not be passed to this engine.
-        """
+        """Config-only resolution; no mapping load, credentials, or open read tx."""
         self._ensure_read_only()
         try:
             return await self._resolve_endpoint(
@@ -533,12 +486,7 @@ class GatewayEngine:
     async def _resolve_endpoint(
         self, endpoint_id: int | str | None, target_url: str, target_method: str
     ) -> EndpointSnapshot | None:
-        """Explicit id first; fall back to matching the target URL + method.
-
-        An explicit id resolves regardless of activation state (the gateway
-        console may test a deactivated mapping on purpose); URL matching only
-        considers active endpoints, like production routing should.
-        """
+        """Explicit id first; fall back to matching the target URL + method."""
         identifier = _as_int(endpoint_id)
         if identifier is not None:
             result = await self.db.execute(
@@ -614,16 +562,7 @@ class GatewayEngine:
         mappings: Sequence[MappingSnapshot | ParameterMapping],
         client_headers: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-        """Split mappings into ``(body, header, query)`` upstream parameters.
-
-        ``request_data`` is keyed by *target* field names (what the caller
-        sends); each mapped value lands under its *source* name (what the
-        upstream expects). Header mappings resolve their value from the
-        caller's headers first (case-insensitive), then from ``request_data``;
-        ``static:`` targets carry literal values. Caller headers are always
-        passed through (minus ``Host``, recomputed by httpx for the real
-        target), with mapped headers layered on top.
-        """
+        """Split mappings into ``(body, header, query)`` upstream parameters."""
 
         if not mappings:
             return (

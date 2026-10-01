@@ -1,21 +1,3 @@
-"""Gateway routes: ``POST /api/map-and-call`` — the map-and-call engine.
-
-Mounted under ``/api`` in :mod:`backend.main`, matching the frontend's
-``POST /api/map-and-call`` contract.
-
-The endpoint requires an authenticated, active user; it reuses the
-process-wide httpx client from ``app.state``.
-
-Resilience is applied around the engine call, in order:
-
-1. request deduplication (replays an identical TTL-cached result),
-2. per-endpoint rate limiting,
-3. circuit breaking.
-
-The audit-log write and any matched webhook deliveries are scheduled as
-background tasks so nothing on the response path blocks.
-"""
-
 import logging
 from uuid import uuid4
 
@@ -62,7 +44,7 @@ def _rejected(
     status_code: int,
     error: str,
 ) -> dict:
-    """Gateway-compatible result for a request refused before execution."""
+
     return {
         "request_id": str(uuid4()),
         "endpoint_id": endpoint_id,
@@ -105,11 +87,6 @@ async def map_and_call(
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(get_current_active_user),
 ) -> MapAndCallResponse:
-    """Apply an endpoint's parameter mappings and call the upstream API.
-
-    Returns the full audit trail — status code, transformed body, every
-    header exchanged on both sides and accurate timings.
-    """
 
     engine = GatewayEngine(
         db,

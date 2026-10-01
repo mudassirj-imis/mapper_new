@@ -14,12 +14,10 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["write_call_log", "redact", "MASK"]
 
-#: Replacement written in place of any credential value.
+
 MASK = "********"
 
-#: Keys whose values must never reach the database or the log, matched
-#: case-insensitively. ``user``/``pass`` are included because the upstream
-#: endpoints in use authenticate with them in the query string or body.
+
 _SENSITIVE_KEYS = frozenset(
     {
         "user",
@@ -45,8 +43,7 @@ _SENSITIVE_KEYS = frozenset(
     }
 )
 
-#: Values that look like a credential even under an unexpected key, e.g. a
-#: JWT or a "Bearer ..." string captured in a free-form header.
+
 _BEARER = re.compile(r"^\s*(bearer|basic|token)\s+\S", re.IGNORECASE)
 _JWT = re.compile(r"^\s*ey[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 
@@ -55,7 +52,7 @@ def _is_sensitive(key: str) -> bool:
     normalised = str(key).strip().lower().replace(" ", "_")
     if normalised in _SENSITIVE_KEYS:
         return True
-    # Catch variants like "userPassword" or "api_key_value".
+
     return any(
         part in normalised for part in ("password", "secret", "api_key", "apikey")
     )
@@ -69,11 +66,7 @@ def _scrub_value(value: str) -> str:
 
 
 def redact(payload: Any) -> Any:
-    """Return a copy of ``payload`` with every credential value masked.
-
-    Keys are always preserved so consumers can still see *that* a credential
-    was sent; only the value is replaced. Nested dicts and lists are walked.
-    """
+    """Return a copy of ``payload`` with every credential value masked."""
     if isinstance(payload, dict):
         masked: dict[Any, Any] = {}
         for key, value in payload.items():
@@ -103,13 +96,7 @@ def _headers(source: Any) -> dict[str, Any] | None:
 
 
 def _query_params(source: Any) -> dict[str, Any] | None:
-    """Normalise a captured query mapping to a plain, redacted dict.
-
-    Unlike :func:`_headers` this keeps repeated parameters readable: httpx
-    models a key sent more than once as a list, which ``str()`` would render
-    as ``['a', 'b']``. Those are joined here instead, so the audit view shows
-    one row per parameter name.
-    """
+    """Normalise a captured query mapping to a plain, redacted dict."""
     if not isinstance(source, dict) or not source:
         return None
 
@@ -124,17 +111,7 @@ def _query_params(source: Any) -> dict[str, Any] | None:
 
 
 def _client_response(log_data: dict[str, Any]) -> dict[str, Any]:
-    """Build the gateway's own response envelope for the client.
-
-    This is deliberately *not* the upstream body -- that is stored separately
-    in ``external_response``. Mirroring the legacy engine, the envelope is
-    assembled here: the status codes, the message, and the payload under
-    ``data``. Keeping the two apart means a passthrough call still records
-    the upstream envelope verbatim in ``external_response``, while
-    ``internal_api_client_response`` stays the shape the client was served.
-
-    ``resCode``/``status_code`` sit alongside ``data`` -- never inside it.
-    """
+    """Build the gateway's own response envelope for the client."""
     data = log_data.get("data")
     status_code = log_data.get("status_code")
 
@@ -142,8 +119,7 @@ def _client_response(log_data: dict[str, Any]) -> dict[str, Any]:
         message = (
             data.get("message", "Success") if isinstance(data, dict) else "Success"
         )
-        # Fall back to the whole body when the upstream is not ``data``-shaped,
-        # so nothing is dropped for APIs that return a bare payload.
+
         payload = data.get("data", data) if isinstance(data, dict) else data
         return {
             "success": True,
@@ -164,12 +140,7 @@ def _client_response(log_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _inserted_id(result: Any) -> int | None:
-    """Primary key of the row just written, for stamping the MongoDB mirror.
-
-    Read from the driver's own report rather than a second query, so it costs
-    nothing extra. It only labels the audit document, so ``None`` simply skips
-    the mirror rather than failing a call that is already recorded in MySQL.
-    """
+    """Primary key of the row just written, for stamping the MongoDB mirror."""
     try:
         return result.inserted_primary_key[0]
     except Exception:
@@ -193,9 +164,6 @@ async def write_call_log(
         values = schema_probe.writable(
             {
                 "endpoint_id": log_data.get("endpoint_id"),
-                # ``request_headers`` is what the client sent; the external
-                # ``external_request_headers`` is what went out upstream, which
-                # additionally carries any auth header the gateway injected.
                 "source_request_headers": _headers(
                     log_data.get("request_headers")
                     or log_data.get("internal_request_headers")
@@ -210,9 +178,6 @@ async def write_call_log(
                 "target_response_headers": _headers(
                     log_data.get("external_response_headers")
                 ),
-                # The query string the gateway actually dialled. The engine
-                # rebuilds it on the final request URL, so it also covers params
-                # already present on the target URL, not just mapped ones.
                 "target_query_params": _query_params(
                     log_data.get("external_query_params")
                 ),
@@ -227,10 +192,6 @@ async def write_call_log(
                 "target_request_payload": redact(
                     log_data.get("external_request_body") or {}
                 ),
-                # The raw upstream body, kept separately from the gateway
-                # envelope above. Stored as ``{}`` rather than NULL so the audit
-                # trail never has to distinguish "no upstream body" from "not
-                # recorded".
                 "target_response": redact(log_data.get("data") or {}),
                 "status": status,
                 "response_time_ms": (
@@ -242,12 +203,6 @@ async def write_call_log(
             }
         )
 
-        # A Core insert is used rather than the ORM's unit of work because the
-        # ORM emits every mapped column it has a Python-side value for -- and
-        # for ``Mapped[int | None]`` that includes columns never assigned, as
-        # an explicit NULL. On a table without them that is error 1054 again.
-        # Naming the columns ourselves is the only way to guarantee the
-        # statement matches the table.
         result = await db.execute(insert(ApiCallLog.__table__).values(**values))
         await db.commit()
 
@@ -259,16 +214,9 @@ async def write_call_log(
             values.get("response_time_ms"),
         )
 
-        # On a database missing the detail columns the row above cannot carry
-        # the headers and query string, so mirror the call to MongoDB and let
-        # the enrichment pass serve it. Skipped when the table is complete.
-        # Imported here because ``audit_enrichment`` imports ``redact`` from
-        # this module; a module-level import would be circular.
         from backend.services import audit_enrichment
 
-        await audit_enrichment.mirror_call(
-            _inserted_id(result), log_data
-        )
+        await audit_enrichment.mirror_call(_inserted_id(result), log_data)
 
     except Exception:
         logger.exception("Failed to persist the gateway call log")

@@ -1,9 +1,3 @@
-"""Developer tests for Tasks 6-8: resilience, mock/webhook, and log querying.
-
-No network, database or secret files - everything is mocked (mirrors the style of
-:mod:`test_foundations`).
-"""
-
 import asyncio
 import os
 import unittest
@@ -21,9 +15,6 @@ with (
             "JWT_SECRET": "test",
             "ENCRYPTION_KEY": "test",
             "AUTH_BASE_URL": "https://auth.test",
-            # Required settings, supplied here so this module does not depend on
-            # a developer's ``.env``. No test reaches Mongo: the collection is
-            # stubbed or the store is disabled.
             "AUDIT_MONGO_URI": "mongodb://audit-store.invalid:27017/",
             "AUDIT_MONGO_DATABASE": "audit_test_db",
             "AUDIT_MONGO_COLLECTION": "audit_test_collection",
@@ -112,7 +103,7 @@ class CircuitBreakerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(breaker.state("ep"), CircuitState.OPEN)
         self.assertFalse(await breaker.allow("ep"))
         await asyncio.sleep(0.1)
-        self.assertTrue(await breaker.allow("ep"))  # single trial
+        self.assertTrue(await breaker.allow("ep"))
         self.assertEqual(breaker.state("ep"), CircuitState.HALF_OPEN)
         await breaker.record_success("ep")
         self.assertEqual(breaker.state("ep"), CircuitState.CLOSED)
@@ -211,13 +202,7 @@ class WebhookClassificationTests(unittest.TestCase):
 class LogServiceTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def _log_row(log_id: int) -> tuple[SimpleNamespace, SimpleNamespace]:
-        """One ``(ApiCallLog, ApiEndpoint)`` pair with real attribute types.
 
-        ``list_logs`` unpacks rows into two entities and feeds them straight
-        into ``CallLogSummary``, so bare ``Mock()``s fail pydantic validation.
-        ``created_at`` is left ``None`` so the MongoDB enrichment lookup short
-        circuits and the test stays hermetic.
-        """
         log = SimpleNamespace(
             id=log_id,
             endpoint_id=1,
@@ -285,13 +270,6 @@ class LogServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LogOnlyEndpointTests(unittest.IsolatedAsyncioTestCase):
-    """A ``source_api_url`` with no scheme is logged, never fetched.
-
-    Mirrors the legacy engine, which skipped the external call for those
-    endpoints (``/v1/audio/play`` and friends) and still reported success
-    instead of surfacing httpx's unsupported-protocol error.
-    """
-
     async def test_relative_source_url_skips_the_upstream_call(self):
         endpoint = endpoint_snapshot(source_api_url="/v1/audio/play", method="GET")
         client = make_client()

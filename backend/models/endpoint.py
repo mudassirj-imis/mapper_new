@@ -18,18 +18,7 @@ if TYPE_CHECKING:
 
 
 def _now() -> datetime:
-    """Naive local timestamp for the ``DATETIME`` audit columns.
 
-    ``api_endpoint.created_at`` and ``updated_at`` are ``NOT NULL`` with no
-    database default, so the ORM must always supply a value — a missing one
-    makes every insert fail with MySQL 1048
-    (``Column 'created_at' cannot be null``).
-
-    The app and the MySQL server share a clock and timezone (both report
-    UTC+5), so this stays consistent with ``server_default=func.now()`` on
-    ``api_call_log`` and with the ``datetime.now()`` stamps the routers embed
-    in endpoint descriptions.
-    """
     return datetime.now()
 
 

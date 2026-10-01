@@ -1,11 +1,3 @@
-"""Single source of truth for enums shared by ORM models and Pydantic schemas.
-
-Every enum subclasses :class:`str` so values serialize to plain JSON strings.
-Enum-typed columns in the ORM are stored as ``String`` (never SQLAlchemy
-``Enum``) so the database schema stays portable across backends (PostgreSQL
-today, MySQL-compatible if ever needed).
-"""
-
 import enum
 
 __all__ = [

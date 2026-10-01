@@ -1,11 +1,3 @@
-"""Async CRUD service for ``parameter_mappings`` rows.
-
-Parameters belong to an endpoint (``api_endpoint_id`` FK, cascade delete).
-Every function takes an :class:`~sqlalchemy.ext.asyncio.AsyncSession` and
-commits its own writes so routers can serialize the returned ORM objects
-directly. Explicit ``*_flush`` helpers leave commit/rollback to their caller.
-"""
-
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,13 +17,7 @@ __all__ = [
 
 
 def _as_int(value: object) -> int | None:
-    """Best-effort conversion of ``value`` to an integer id.
 
-    Both ``api_endpoint.id`` and ``api_endpoint_parameter_mapping.id`` are
-    ``INT`` auto-increment columns. The previous UUID coercion silently turned
-    every id into a miss: ``_fetch_by_id`` reported "not found" and the
-    endpoint/parameter list routes answered with an empty list.
-    """
     if isinstance(value, int):
         return value
     if value is None or value == "":
@@ -116,12 +102,7 @@ async def create_parameter(
 async def bulk_create_parameters_flush(
     db: AsyncSession, endpoint_id: int | str, params: list[ParameterCreate]
 ) -> list[ParameterMapping]:
-    """Stage and flush a batch, without committing or refreshing its rows.
 
-    Caller owns atomic endpoint-plus-mapping groups and must roll back on
-    any failure. Invalid endpoint IDs and empty batches retain the CRUD
-    wrapper's empty-list behavior.
-    """
     identifier = _as_int(endpoint_id)
     if identifier is None or not params:
         return []
@@ -130,7 +111,7 @@ async def bulk_create_parameters_flush(
         ParameterMapping(api_endpoint_id=identifier, **_parameter_values(item))
         for item in params
     ]
-    db.add_all(objects)  # one batch INSERT on flush
+    db.add_all(objects)
     await db.flush()
     return objects
 

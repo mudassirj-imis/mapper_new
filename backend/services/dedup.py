@@ -1,12 +1,3 @@
-"""In-memory request deduplication with a short TTL cache.
-
-A key is derived as the SHA256 of the endpoint id plus a canonical (sorted-key)
-JSON serialisation of the request payload. Identical requests arriving within
-the TTL window hit the cache and get the original result replayed instead of
-being forwarded upstream again. Only successful results are cached so a
-transient failure is never replayed to later callers.
-"""
-
 from __future__ import annotations
 
 import asyncio

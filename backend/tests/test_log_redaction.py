@@ -1,16 +1,3 @@
-"""Audit-log redaction and header-capture contract.
-
-Guards the three guarantees the log output depends on:
-
-* request headers are captured, never left null;
-* credential values are masked everywhere they appear, on write *and* on read;
-* ``resCode``/``status_code`` sit beside ``data``, never inside it.
-
-Every fixture below uses obviously-fake placeholder values. Real credentials
-must never appear in a test, not even as the input being masked -- the
-repository keeps history, so a "harmless" fixture is a permanent secret.
-"""
-
 import unittest
 
 from backend.schemas.log import CallLogResponse
@@ -26,9 +13,7 @@ from backend.services.log_writer import (
 
 class RedactionTests(unittest.TestCase):
     def test_required_keys_are_masked_and_kept(self):
-        # Placeholder values only. Real credentials must never be committed
-        # here, not even as fixtures -- a test asserting that they get masked
-        # still puts them in git history forever.
+
         payload = {
             "user": "example-user",
             "pass": "example-pass",
@@ -38,7 +23,7 @@ class RedactionTests(unittest.TestCase):
             "api_key": "example-api-key",
         }
         masked = redact(payload)
-        # Keys survive so consumers still see *that* a credential was sent.
+
         self.assertEqual(set(masked), set(payload))
         for value in masked.values():
             self.assertEqual(value, MASK)
@@ -99,13 +84,12 @@ class ClientResponseTests(unittest.TestCase):
         )
         self.assertEqual(body["resCode"], 200)
         self.assertEqual(body["status_code"], 200)
-        # Neither status key is nested inside the payload the envelope carries.
+
         self.assertNotIn("resCode", body["data"])
         self.assertNotIn("status_code", body["data"])
         self.assertEqual(body["message"], "ok")
         self.assertEqual(body["data"], {"1": {"Date": "x"}})
-        # The envelope is constructed, not a copy of the upstream body: the
-        # upstream-only ``error_code`` belongs to external_response alone.
+
         self.assertNotIn("error_code", body)
 
     def test_no_content_status_is_mirrored(self):
@@ -135,13 +119,6 @@ class ClientResponseTests(unittest.TestCase):
 
 
 class InternalVsExternalResponseTests(unittest.TestCase):
-    """``internal_api_client_response`` and ``external_response`` are distinct.
-
-    The internal field is the gateway envelope it built for the client; the
-    external field is the upstream body verbatim. They must never collapse
-    into the same object, and neither may be null.
-    """
-
     UPSTREAM = {
         "data": {"1": {"Date": "2026-09-24"}},
         "message": "Records retrieved successfully.",
@@ -159,10 +136,10 @@ class InternalVsExternalResponseTests(unittest.TestCase):
     def test_passthrough_call_keeps_the_two_apart(self):
         internal, external = self._both()
         self.assertNotEqual(internal, external)
-        # The upstream envelope survives intact on the external side.
+
         self.assertEqual(external, self.UPSTREAM)
         self.assertIn("error_code", external)
-        # The internal side is the constructed envelope.
+
         self.assertEqual(internal["resCode"], 200)
         self.assertEqual(internal["status_code"], 200)
         self.assertEqual(internal["data"], self.UPSTREAM["data"])
@@ -170,8 +147,8 @@ class InternalVsExternalResponseTests(unittest.TestCase):
     def test_neither_field_is_null(self):
         for overrides in (
             {},
-            {"data": None},  # 204 no content
-            {"success": False, "error": "boom"},  # upstream failure
+            {"data": None},
+            {"success": False, "error": "boom"},
         ):
             internal, external = self._both(**overrides)
             self.assertIsNotNone(internal, overrides)
@@ -189,13 +166,6 @@ class InternalVsExternalResponseTests(unittest.TestCase):
 
 
 class QueryParamCaptureTests(unittest.TestCase):
-    """The upstream query string is normalised, redacted and never lost.
-
-    ``external_query_params`` is one of the six audit blocks the call-log
-    detail view renders. It used to be hardcoded to ``None`` on read and had
-    nowhere to be stored on write, so the block was permanently empty.
-    """
-
     def test_empty_and_missing_capture_stay_null(self):
         self.assertIsNone(_query_params(None))
         self.assertIsNone(_query_params({}))
@@ -207,8 +177,7 @@ class QueryParamCaptureTests(unittest.TestCase):
         )
 
     def test_repeated_params_collapse_to_one_readable_row(self):
-        # httpx models a repeated parameter as a list; ``str()`` would leak the
-        # Python repr into the audit table.
+
         self.assertEqual(
             _query_params({"date": ["20260924", "20260925"]}),
             {"date": "20260924, 20260925"},
@@ -221,15 +190,6 @@ class QueryParamCaptureTests(unittest.TestCase):
 
 
 class DetailPayloadContractTests(unittest.TestCase):
-    """Every field the detail view reads must survive schema serialisation.
-
-    ``GET /call-logs/{id}`` is served through ``response_model``, so a field
-    that is populated by ``log_service.get_log`` but not declared on
-    ``CallLogResponse`` is dropped silently and the view renders blank.
-    """
-
-    #: The six audit blocks LogDetail.jsx renders, plus the fields the
-    #: overview reads alongside them.
     REQUIRED = (
         "internal_request_headers",
         "internal_request_body",
@@ -253,13 +213,6 @@ class DetailPayloadContractTests(unittest.TestCase):
 
 
 class AuditEnrichmentTests(unittest.TestCase):
-    """MongoDB supplements must fill gaps without displacing MySQL.
-
-    Rows written by the legacy gateway carry no headers or query string in
-    MySQL; that detail lives in its MongoDB document. The merge is additive
-    only -- MySQL stays the authority for whatever it already recorded.
-    """
-
     DOCUMENT = {
         "external_request_headers": {"accept": "*/*"},
         "external_request_body": {"user": "example-user"},
@@ -285,7 +238,7 @@ class AuditEnrichmentTests(unittest.TestCase):
         self.assertEqual(merged["external_response"], {"from": "mysql"})
 
     def test_empty_mysql_values_do_count_as_gaps(self):
-        # ``{}`` and ``""`` render as empty in the UI, so they must be fillable.
+
         for empty in ({}, "", []):
             merged = audit_enrichment.apply(
                 {"external_response": empty},
@@ -329,5 +282,5 @@ class AuditEnrichmentTests(unittest.TestCase):
         self.assertEqual(unknown, [], f"mapped fields absent from schema: {unknown}")
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     unittest.main()
