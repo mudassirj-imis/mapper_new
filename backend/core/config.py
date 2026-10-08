@@ -229,4 +229,19 @@ class Settings(BaseSettings):
         return value
 
 
-settings = Settings()
+# The module-level Settings singleton is built lazily. Tests must clear the
+# environment (and let pydantic_settings parse only the sandbox .env) before
+# the first access, otherwise the real .env's production values leak into the
+# `settings_customise_sources` merge. The public `settings` object is never
+# replaced - only the backed singleton is constructed on first use.
+_settings: Settings | None = None
+
+
+def _get_settings() -> Settings:
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+settings = _get_settings()

@@ -1,18 +1,61 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_active_user, get_db
 from backend.services.central_auth import CentralUser
 
 User = CentralUser
-from backend.schemas.log import CallLogListResponse, CallLogResponse
-from backend.services import log_service
+from backend.schemas.log import (
+    CallLogIngestRequest,
+    CallLogIngestResponse,
+    CallLogListResponse,
+    CallLogResponse,
+)
+from backend.services import log_ingest, log_service
 
 __all__ = ["router"]
 
 router = APIRouter(tags=["Call Logs"])
+
+
+async def _require_ingest_token(request: Request) -> None:
+    """Shared-secret gate for external log producers (no user session).
+
+    Open until ``LOG_INGEST_TOKEN`` is configured in the environment.
+    """
+    if not log_ingest.check_ingest_token(request.headers):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing log ingest token",
+        )
+
+
+@router.post("/call-logs/ingest", response_model=CallLogIngestResponse)
+async def ingest_call_log(
+    payload: CallLogIngestRequest,
+    db: AsyncSession = Depends(get_db),
+    _token: None = Depends(_require_ingest_token),
+) -> CallLogIngestResponse:
+    """Store one call log pushed by an external producer (CRM gateway helper).
+
+    The payload may use this app's own ``log_data`` keys or common aliases
+    (``headers``, ``request_body``, ``response``, ``status_code``, ...);
+    credentials are redacted before persistence and the entry is linked to
+    its endpoint so it appears in the dashboard.
+    """
+    return await log_ingest.store_ingested_log(db, payload)
+
+
+@router.post("/call-logs", response_model=CallLogIngestResponse)
+async def create_call_log(
+    payload: CallLogIngestRequest,
+    db: AsyncSession = Depends(get_db),
+    _token: None = Depends(_require_ingest_token),
+) -> CallLogIngestResponse:
+    """REST-style alias for ``/call-logs/ingest`` (legacy mapper contract)."""
+    return await log_ingest.store_ingested_log(db, payload)
 
 
 @router.get("/call-logs", response_model=CallLogListResponse)

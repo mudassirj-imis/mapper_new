@@ -105,3 +105,31 @@ class CallLogListResponse(PaginatedResponse):
     """Paginated envelope of CallLogSummary rows."""
 
     items: list[CallLogSummary] = Field(default_factory=list)
+
+
+class CallLogIngestRequest(BaseModel):
+    """One log entry pushed by an external caller (e.g. the CRM gateway helper).
+
+    Only the routing/diagnostic fields are typed; every other key (headers,
+    request/response bodies, timings, ``full_log``, ...) is carried through
+    untouched so alias names can be normalised by the ingest service.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    request_id: str | int | None = None
+    endpoint_id: int | str | None = None
+    method: str | None = None
+    path: str | None = None
+    success: bool | None = None
+    status: str | None = None
+    status_code: int | str | None = None
+
+
+class CallLogIngestResponse(BaseModel):
+    """Acknowledgement returned after a log entry has been stored."""
+
+    success: bool
+    message: str
+    log_id: int | None = None
+    endpoint_id: int | None = None

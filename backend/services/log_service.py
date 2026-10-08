@@ -22,6 +22,28 @@ _MAX_LIMIT = 5000
 
 _VALID_STATUS = {member.value for member in CallStatusEnum}
 
+LOG_ONLY_PLACEHOLDER = "Log only endpoint"
+
+
+def _external_response_or_placeholder(value: object) -> object:
+    """Return the log-only placeholder when no upstream response was captured.
+
+    Ingested (log-only) calls store an empty ``target_response`` and legacy
+    rows may store ``NULL``; the frontend renders whatever value the API
+    returns, so the placeholder string is displayed verbatim in the
+    External Response section without any client-side change.
+    """
+    if value is None:
+        return LOG_ONLY_PLACEHOLDER
+
+    if isinstance(value, str):
+        return LOG_ONLY_PLACEHOLDER if not value.strip() else value
+
+    if isinstance(value, (dict, list)) and not value:
+        return LOG_ONLY_PLACEHOLDER
+
+    return value
+
 
 def _as_int(value: object) -> int | None:
     if isinstance(value, int):
@@ -184,6 +206,11 @@ async def list_logs(
                     if field in item.model_fields:
                         setattr(item, field, value)
 
+    for item in items:
+        item.external_response = _external_response_or_placeholder(
+            item.external_response
+        )
+
     return total, items, page, per_page
 
 
@@ -219,7 +246,7 @@ async def get_log(
 
     schema_probe.apply_defaults(log)
 
-    return _enrich(
+    detail = _enrich(
         CallLogResponse(
             id=log.id,
             endpoint_id=log.endpoint_id,
@@ -255,6 +282,12 @@ async def get_log(
         ),
         log.created_at,
     )
+
+    detail.external_response = _external_response_or_placeholder(
+        detail.external_response
+    )
+
+    return detail
 
 
 def _enrich(record: CallLogResponse, created_at: datetime | None) -> CallLogResponse:

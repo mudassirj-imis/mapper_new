@@ -22,6 +22,7 @@ from backend.api.auth import router as auth_router
 from backend.api.endpoints_router import router as endpoints_router
 from backend.api.export_import_router import router as export_import_router
 from backend.api.gateway_router import router as gateway_router
+from backend.api.gateway_proxy_router import router as gateway_proxy_router
 from backend.api.health_router import router as health_router
 from backend.api.logs_router import router as logs_router
 from backend.api.mock_router import router as mock_router
@@ -96,6 +97,11 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         """Liveness probe."""
         return {"status": "healthy"}
+
+    # Legacy dynamic gateway ("/{path:path}") — registered last on purpose so
+    # every concrete route above wins the match and only otherwise-unhandled
+    # business requests fall through to endpoint resolution + proxy + logging.
+    app.include_router(gateway_proxy_router)
 
     return app
 

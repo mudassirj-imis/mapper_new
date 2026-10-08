@@ -151,8 +151,12 @@ def _inserted_id(result: Any) -> int | None:
 async def write_call_log(
     db: AsyncSession,
     log_data: dict[str, Any],
-) -> None:
-    """Persist one api_call_log row from a gateway result dict."""
+) -> int | None:
+    """Persist one api_call_log row from a gateway result dict.
+
+    Returns the inserted primary key, or ``None`` when the row could not be
+    written (failures are logged, never raised).
+    """
 
     try:
         succeeded = bool(log_data.get("success"))
@@ -216,7 +220,11 @@ async def write_call_log(
 
         from backend.services import audit_enrichment
 
-        await audit_enrichment.mirror_call(_inserted_id(result), log_data)
+        inserted_id = _inserted_id(result)
+
+        await audit_enrichment.mirror_call(inserted_id, log_data)
+
+        return inserted_id
 
     except Exception:
         logger.exception("Failed to persist the gateway call log")

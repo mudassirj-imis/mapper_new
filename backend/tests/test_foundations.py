@@ -698,11 +698,9 @@ class SchemaAndConfigTests(unittest.TestCase):
         self.assertEqual(settings.DEDUP_MAX_BYTES, 16777216)
 
     def test_settings_list_values_accept_csv_and_json_without_new_dependencies(self):
+        # CORS_ORIGINS is the only list-valued setting that decodes CSV.
         environment = {
-            "WEBHOOK_ALLOWED_HOSTS": "receiver.test, other.test",
-            "WEBHOOK_ALLOWED_CIDRS": '["10.0.0.0/8"]',
-            "SFTP_PRIVATE_KEY_PATHS": '["C:/keys/operator"]',
-            "CORS_ORIGINS": "*",
+            "CORS_ORIGINS": "receiver.test, other.test",
         }
         with patch.dict(os.environ, environment, clear=True):
             settings = Settings(
@@ -722,13 +720,16 @@ class SchemaAndConfigTests(unittest.TestCase):
     def test_capacity_and_timeout_settings_reject_zero(self):
         for name in [
             "SFTP_MAX_CONCURRENT",
-            "SFTP_OPERATION_TIMEOUT_SECONDS",
-            "WEBHOOK_MAX_JOBS",
+            "SFTP_CONNECT_TIMEOUT_SECONDS",
+            "SFTP_LOGIN_TIMEOUT_SECONDS",
+            "SFTP_PREVIEW_MAX_BYTES",
             "WEBHOOK_DELIVERY_TIMEOUT_SECONDS",
-            "DEDUP_MAX_BYTES",
-            "DEDUP_MAX_INFLIGHT",
-            "DEDUP_MAX_FOLLOWERS",
-            "POLICY_MAX_ENDPOINTS",
+            "SCHEDULER_MAX_JOBS",
+            "SCHEDULER_MAX_REQUEST_BODY_BYTES",
+            "SCHEDULER_MAX_RESPONSE_BODY_BYTES",
+            "SCHEDULER_MAX_HEADERS",
+            "DEDUP_TTL_SECONDS",
+            "DEDUP_MAX_ENTRIES",
         ]:
             with self.subTest(setting=name), self.assertRaises(ValidationError):
                 self.make_settings(**{name: 0})

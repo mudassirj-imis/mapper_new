@@ -97,3 +97,77 @@ https://<BASE_URL>:<PORT>/integration-backend/docs  # Backend (PATH AS SET IN KO
 **Backend: 2528**  <br>
 **Frontend: 3005**
 
+## External log ingestion (CRM gateway helper)
+
+Other services (e.g. the IMIS CRM `gatewayhelper`) can push their per-call
+audit logs into this app instead of the legacy mapper. The logs are
+credential-redacted, linked to their `api_endpoint` row (so they show up in
+the dashboard), and stored in the same `api_call_log` MySQL table + audit
+MongoDB collection the rest of the app uses.
+
+**Endpoints** (no user login required; optional shared secret):
+
+```
+POST /api/call-logs/ingest
+POST /api/call-logs              # alias, legacy mapper contract
+```
+
+**Headers**
+
+```
+Content-Type: application/json
+X-Log-Ingest-Token: <value of LOG_INGEST_TOKEN>   # only if LOG_INGEST_TOKEN is set
+```
+
+**Body** — every field is optional; common aliases are understood:
+
+```json
+{
+  "request_id": "3f6c1f2e-...)",
+  "method": "POST",
+  "path": "/v1/integration/cc/create-ticket",
+  "endpoint_id": null,
+  "success": true,
+  "status": "SUCCESS",
+  "status_code": 200,
+  "external_status_code": 200,
+  "total_time_ms": 412,
+  "headers": {"Content-Type": "application/json"},
+  "request_body": {"cnic": "12345-..."},
+  "response": {"message": "created"},
+  "error": null,
+  "full_log": "optional captured console output"
+}
+```
+
+Recognised aliases include `headers` / `internal_request_headers`,
+`request_body` / `body` / `request_data`,
+`response` / `response_body` / `source_response`,
+`status_code` / `client_status_code`,
+`response_time_ms` / `total_time_ms`, `error_message`, `requestId`,
+`endpointId`, ... Unknown keys pass through untouched.
+
+**Response**
+
+```json
+{"success": true, "message": "Call log stored", "log_id": 1234, "endpoint_id": 277}
+```
+
+**Example caller** (for the CRM `gatewayhelper.py` — wire it there, this repo
+is the receiving end only):
+
+```python
+LOG_INGEST_URL = f"{os.getenv('GATEWAY_URL_2')}/api/call-logs/ingest"
+
+def store_log(log_entry: dict) -> None:
+    try:
+        requests.post(LOG_INGEST_URL, json=log_entry, timeout=5)
+    except Exception as exc:                      # logging must never break the call
+        print(f"[LOG INGEST] {exc}")
+```
+
+Endpoint linking: the `path` is matched (newest first) against
+`target_api_url`, then `source_api_url`, with the HTTP `method` as a
+prefilter — the same suffix rule the gateway engine uses. If nothing matches,
+the log is still stored, just without an endpoint link.
+

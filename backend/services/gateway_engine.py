@@ -594,7 +594,10 @@ class GatewayEngine:
             if value is None:
                 continue
             source = str(mapping.source_parameter)
-            if param_type == "QUERY":
+            # Legacy rows spell query mappings "QUERYSTRING" (the old engine
+            # accepted both); accept every spelling so those values reach the
+            # upstream query string instead of the JSON body.
+            if param_type in ("QUERY", "QUERYSTRING", "QUERY_STRING"):
                 query_params[source] = value
             else:
                 body_params[source] = value
